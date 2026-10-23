@@ -1,6 +1,6 @@
 // Service worker: deixa o app funcionando sem internet (vistoria em lugar sem sinal).
 // Ao mudar qualquer arquivo, aumente VERSION para os aparelhos baixarem a versão nova.
-const VERSION = 'v1.1.1';
+const VERSION = 'v1.2.0';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/db.js', 'js/glm.js', 'js/ui.js', 'js/geometry.js',
@@ -23,7 +23,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));
