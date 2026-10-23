@@ -5,6 +5,7 @@ import { TOOLS } from './tools/index.js';
 import { roomArea } from './geometry.js';
 import { restoreButton } from './tools/export.js';
 
+export const APP_VERSION = '1.2.0'; // mantenha igual ao VERSION do sw.js
 const view = document.getElementById('view');
 let currentPropertyId = null;
 const history = []; // medidas recentes desta sessão
@@ -174,7 +175,8 @@ async function renderHome() {
       h('h1', {}, 'Imóveis'),
       h('button', { class: 'btn primary', onclick: newProperty }, '+ Novo imóvel')),
     search,
-    list
+    list,
+    h('p', { class: 'muted small' }, `versão ${APP_VERSION}`)
   );
 }
 
@@ -327,7 +329,7 @@ async function renderConfig() {
         },
       }, 'Proteger armazenamento'),
       h('div', { class: 'row' }, ...restoreButton('Restaurar backup (.json)', () => (location.hash = '#/')))),
-    h('p', { class: 'muted small' }, 'Cadastro de Imóveis · versão 1.0 · dados salvos só neste aparelho.')
+    h('p', { class: 'muted small' }, `Cadastro de Imóveis · versão ${APP_VERSION} · dados salvos só neste aparelho.`)
   );
 }
 
@@ -361,7 +363,7 @@ function diagnosticsPanel() {
 
 // ---------- Início ----------
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {});
 }
 route();
 glm.reconnectKnown();

@@ -124,6 +124,9 @@ export class GLM extends EventTarget {
     if (!this.supported) throw new Error('Este navegador não tem Bluetooth. No iPad, abra o app pelo navegador Bluefy.');
     this.manualDisconnect = false;
     const optionalServices = SERVICES.map((s) => s.service);
+    // No iPad/iPhone (Bluefy) o filtro por nome falha com a GLM, que não anuncia serviço: lista tudo.
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    showAll ||= ios;
     const device = await navigator.bluetooth.requestDevice(
       showAll
         ? { acceptAllDevices: true, optionalServices }
