@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Cadastro de Imóveis</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">Cadastro</a>
+    <nav id="crumbs" class="crumbs"></nav>
+    <div class="top-right">
+      <span id="glm-last" class="glm-last"></span>
+      <button id="glm-measure" class="glm-measure" type="button" hidden>Medir</button>
+      <button id="glm-pill" class="glm-pill" data-status="disconnected" type="button">
+        <i class="dot"></i><span id="glm-text">Conectar trena</span>
+      </button>
+      <a class="icon-btn gear" href="#/config" title="Configurações" aria-label="Configurações">⚙</a>
+    </div>
+  </header>
+
+  <main id="view" class="view"></main>
+
+  <aside id="tray" class="tray">
+    <button id="tray-toggle" class="tray-toggle" type="button">Medidas <b id="tray-count"></b></button>
+    <div id="tray-list" class="tray-list"></div>
+  </aside>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <noscript>Este app precisa de JavaScript.</noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
