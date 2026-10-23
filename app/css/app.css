@@ -239,3 +239,59 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 }
 .glm-measure:active { transform: scale(.96); }
 .glm-measure:disabled { opacity: .7; }
+
+/* ---------- Serviços ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 14px; background: #e2e8f0; color: #334155; font-size: 13px; font-weight: 600; border: 0; font-family: inherit; }
+.chip.done { background: #dcfce7; color: #166534; }
+.chips.pick .chip { min-height: 36px; padding: 0 14px; cursor: pointer; background: #fff; border: 1px solid var(--line); }
+.chips.pick .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.progress { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; margin-top: 10px; }
+.progress i { display: block; height: 100%; background: var(--ok); }
+.svc-card { color: var(--ink); display: block; }
+.picker { margin-top: 12px; }
+.svc-pick { text-align: left; border: 2px solid transparent; cursor: pointer; font: inherit; color: var(--ink); }
+.svc-pick.on { border-color: var(--accent); background: var(--accent-soft); }
+.picker-options { margin-top: 18px; }
+.opt-list { display: grid; gap: 8px; margin: 10px 0; }
+.opt { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #fff; font: inherit; text-align: left; cursor: pointer; }
+.opt .box { flex: none; width: 26px; height: 26px; border-radius: 7px; border: 2px solid #cbd5e1; display: grid; place-items: center; color: #fff; font-weight: 800; }
+.opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.opt.on .box { background: var(--accent); border-color: var(--accent); }
+.opt.fixed { opacity: .8; cursor: default; }
+.svc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.svc-head h2 { margin: 4px 0 0; font-size: 24px; }
+.svc-layout { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: start; }
+.steps { display: flex; flex-direction: column; gap: 4px; position: sticky; top: calc(var(--top) + 12px); background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px; }
+.step { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; color: var(--ink); }
+.step .num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #e2e8f0; font-weight: 700; font-size: 13px; }
+.step .txt { display: flex; flex-direction: column; font-weight: 600; font-size: 15px; line-height: 1.25; }
+.step .txt small { color: var(--muted); font-weight: 500; font-size: 12px; }
+.step.active { background: var(--accent-soft); }
+.step.active .num { background: var(--accent); color: #fff; }
+.step.done .num { background: var(--ok); color: #fff; }
+.step-title { margin: 0 0 12px; }
+.step-body { min-height: 200px; }
+.step-foot { display: flex; justify-content: space-between; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.segs.yn { margin: 0; max-width: 220px; }
+.suffix { display: flex; align-items: center; gap: 8px; }
+.suffix span { color: var(--muted); font-weight: 600; }
+.calc { padding: 10px 12px; border-radius: 10px; background: #f1f5f9; font-weight: 600; min-height: 44px; }
+.field-photo { width: 100%; max-width: 260px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: #e2e8f0; }
+.field > small { margin-top: -2px; }
+.plan-inner { margin-top: 10px; }
+.problem { border: 2px solid transparent; }
+.problem.on { border-color: #fbbf24; }
+.problem-head { display: flex; gap: 12px; align-items: center; cursor: pointer; }
+.problem-head input { width: 24px; height: 24px; min-height: 0; flex: none; }
+.solution { margin-top: 10px; padding: 12px; background: #f0fdf4; border-radius: 10px; }
+.solution small { font-weight: 800; color: #166534; letter-spacing: .05em; }
+.solution p { margin: 4px 0 8px; }
+textarea.memorial { font: 15px/1.6 Georgia, "Times New Roman", serif; margin-top: 10px; }
+.note { grid-column: auto; margin-bottom: 10px; }
+@media (max-width: 860px) {
+  .svc-layout { grid-template-columns: 1fr; }
+  .steps { position: static; flex-direction: row; overflow-x: auto; }
+  .step { flex: none; }
+  .step .txt small { display: none; }
+}

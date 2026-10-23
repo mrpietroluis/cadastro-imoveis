@@ -5,7 +5,7 @@ import { TOOLS } from './tools/index.js';
 import { roomArea } from './geometry.js';
 import { restoreButton } from './tools/export.js';
 
-export const APP_VERSION = '1.2.0'; // mantenha igual ao VERSION do sw.js
+export const APP_VERSION = '1.3.0'; // mantenha igual ao VERSION do sw.js
 const view = document.getElementById('view');
 let currentPropertyId = null;
 const history = []; // medidas recentes desta sessão
@@ -13,7 +13,9 @@ const history = []; // medidas recentes desta sessão
 // ---------- Ferramentas habilitadas ----------
 export function enabledTools() {
   const ids = getSettings().enabledTools;
-  return TOOLS.filter((t) => (ids ? ids.includes(t.id) : t.defaultEnabled !== false));
+  // Ferramenta nova (que não existia quando a lista foi salva) já entra ligada.
+  const seen = getSettings().seenTools || ['rooms', 'sketch', 'photos', 'export'];
+  return TOOLS.filter((t) => (ids && seen.includes(t.id) ? ids.includes(t.id) : t.defaultEnabled !== false));
 }
 
 // ---------- Barra superior: estado da trena ----------
@@ -127,7 +129,7 @@ async function route() {
   arm(null);
   const parts = location.hash.replace(/^#\/?/, '').split('/');
   window.scrollTo(0, 0);
-  if (parts[0] === 'imovel' && parts[1]) return renderProperty(parts[1], parts[2] || 'dados');
+  if (parts[0] === 'imovel' && parts[1]) return renderProperty(parts[1], parts[2] || 'dados', parts.slice(3));
   if (parts[0] === 'config') return renderConfig();
   return renderHome();
 }
@@ -145,6 +147,7 @@ async function renderHome() {
   crumbs({ label: 'Imóveis' });
   const props = (await db.all('properties')).sort((a, b) => b.updatedAt - a.updatedAt);
   const rooms = await db.all('rooms');
+  const services = await db.all('services');
   const search = h('input', { class: 'search', type: 'search', placeholder: 'Buscar por nome, endereço ou inscrição…' });
   const list = h('div', { class: 'cards' });
 
@@ -159,13 +162,14 @@ async function renderHome() {
           h('div', { class: 'prop-kind' }, p.kind || 'Imóvel'),
           h('h3', {}, p.name || 'Sem nome'),
           h('p', { class: 'muted' }, p.address || 'Endereço não informado'),
+          h('div', { class: 'chips' }, ...services.filter((x) => x.propertyId === p.id).map((x) => h('span', { class: 'chip' + (x.finishedAt ? ' done' : '') }, x.name))),
           h('div', { class: 'prop-meta' },
             h('span', {}, `${rs.length} cômodo${rs.length === 1 ? '' : 's'}`),
             h('span', {}, area ? `${fmt(area)} m²` : '—'),
             h('span', {}, fmtDate(p.updatedAt))));
       })
     );
-    if (!filtered.length) list.append(h('div', { class: 'empty' }, props.length ? 'Nada encontrado.' : 'Nenhum imóvel ainda. Toque em “Novo imóvel” para começar.'));
+    if (!filtered.length) list.append(h('div', { class: 'empty' }, props.length ? 'Nada encontrado.' : 'Nenhum imóvel ainda. Toque em “Novo serviço” para começar.'));
   };
   search.addEventListener('input', draw);
   draw();
@@ -173,11 +177,18 @@ async function renderHome() {
   view.replaceChildren(
     h('div', { class: 'page-head' },
       h('h1', {}, 'Imóveis'),
-      h('button', { class: 'btn primary', onclick: newProperty }, '+ Novo imóvel')),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn', onclick: newProperty }, '+ Novo imóvel'),
+        h('button', { class: 'btn primary', onclick: newService }, '+ Novo serviço'))),
     search,
     list,
     h('p', { class: 'muted small' }, `versão ${APP_VERSION}`)
   );
+}
+
+async function newService() {
+  const p = await db.put('properties', { id: uid(), name: '', kind: 'Casa', createdAt: Date.now() });
+  location.hash = `#/imovel/${p.id}/services/novo`;
 }
 
 async function newProperty() {
@@ -186,7 +197,7 @@ async function newProperty() {
 }
 
 // ---------- Imóvel ----------
-async function renderProperty(id, tab) {
+async function renderProperty(id, tab, params = []) {
   const property = await db.get('properties', id);
   if (!property) {
     location.hash = '#/';
@@ -211,11 +222,12 @@ async function renderProperty(id, tab) {
     glm,
     toast,
     tools,
+    params,
     async saveProperty(patch) {
       Object.assign(property, patch);
       await db.put('properties', property);
     },
-    rerender: () => renderProperty(id, tab),
+    rerender: () => renderProperty(id, tab, params),
   };
 
   if (tab === 'dados') return renderPropertyData(body, ctx);
@@ -280,7 +292,7 @@ async function renderConfig() {
       const cb = h('input', { type: 'checkbox', checked: enabled.has(t.id) });
       cb.addEventListener('change', () => {
         cb.checked ? enabled.add(t.id) : enabled.delete(t.id);
-        saveSettings({ enabledTools: TOOLS.filter((x) => enabled.has(x.id)).map((x) => x.id) });
+        saveSettings({ enabledTools: TOOLS.filter((x) => enabled.has(x.id)).map((x) => x.id), seenTools: TOOLS.map((x) => x.id) });
         toast(`${t.name} ${cb.checked ? 'ativada' : 'desativada'}`);
       });
       return h('label', { class: 'tool-row' },
@@ -316,6 +328,7 @@ async function renderConfig() {
       h('div', { class: 'row' },
         h('button', { class: 'btn', onclick: () => glm.simulate() }, 'Simular medida'),
         h('span', { class: 'muted' }, 'Útil para testar sem a trena.'))),
+    companyPanel(),
     diagnosticsPanel(),
     h('section', { class: 'panel' },
       h('h2', {}, 'Dados'),
@@ -331,6 +344,24 @@ async function renderConfig() {
       h('div', { class: 'row' }, ...restoreButton('Restaurar backup (.json)', () => (location.hash = '#/')))),
     h('p', { class: 'muted small' }, `Cadastro de Imóveis · versão ${APP_VERSION} · dados salvos só neste aparelho.`)
   );
+}
+
+function companyPanel() {
+  const c = getSettings().company || {};
+  const fields = [
+    ['empresa', 'Empresa', 'Nome que sai no carimbo das pranchas'],
+    ['responsavel', 'Responsável técnico', 'Nome completo'],
+    ['registro', 'Registro profissional', 'Ex.: CAU A12345-6'],
+    ['contato', 'Contato', 'Telefone / e-mail'],
+  ];
+  return h('section', { class: 'panel' },
+    h('h2', {}, 'Dados para o carimbo'),
+    h('p', { class: 'muted' }, 'Aparecem no carimbo das pranchas e nas fichas de entrega.'),
+    h('div', { class: 'form-grid' }, ...fields.map(([key, label, ph]) => {
+      const inp = h('input', { value: c[key] || '', placeholder: ph });
+      inp.addEventListener('change', () => saveSettings({ company: { ...(getSettings().company || {}), [key]: inp.value } }));
+      return h('label', { class: 'field' }, h('span', {}, label), inp);
+    })));
 }
 
 function diagnosticsPanel() {

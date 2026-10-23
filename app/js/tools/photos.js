@@ -16,7 +16,7 @@ function loadImage(src) {
   });
 }
 
-async function importFile(file) {
+export async function importFile(file) {
   const url = URL.createObjectURL(file);
   try {
     const img = await loadImage(url);

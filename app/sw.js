@@ -1,9 +1,10 @@
 // Service worker: deixa o app funcionando sem internet (vistoria em lugar sem sinal).
 // Ao mudar qualquer arquivo, aumente VERSION para os aparelhos baixarem a versão nova.
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.3.0';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/db.js', 'js/glm.js', 'js/ui.js', 'js/geometry.js',
+  'js/services/catalog.js', 'js/services/delivery.js', 'js/tools/services.js',
   'js/tools/index.js', 'js/tools/rooms.js', 'js/tools/sketch.js', 'js/tools/photos.js', 'js/tools/export.js',
   'vendor/jspdf.umd.min.js', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-512.png',
 ];
