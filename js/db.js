@@ -1,8 +1,8 @@
 // Banco local (IndexedDB). Tudo fica no próprio iPad — faça backup pela ferramenta Exportar.
 const DB_NAME = 'cadastro-imoveis';
-const VERSION = 1;
-const STORES = ['properties', 'rooms', 'photos', 'measures'];
-const INDEXED = ['rooms', 'photos', 'measures'];
+const VERSION = 2;
+const STORES = ['properties', 'rooms', 'photos', 'measures', 'services'];
+const INDEXED = ['rooms', 'photos', 'measures', 'services'];
 
 let dbPromise;
 

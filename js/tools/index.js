@@ -15,9 +15,10 @@
 //                   { type: 'image', title, dataUrl, w, h, group? }
 // Para usar a trena, crie campos com measureField() de ../ui.js.
 
+import services from './services.js';
 import rooms from './rooms.js';
 import sketch from './sketch.js';
 import photos from './photos.js';
 import exportTool from './export.js';
 
-export const TOOLS = [rooms, sketch, photos, exportTool];
+export const TOOLS = [services, rooms, sketch, photos, exportTool];

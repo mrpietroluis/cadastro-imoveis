@@ -7,7 +7,7 @@ import { roomArea, roomPerimeter, wallArea, isPoly } from '../geometry.js';
 import { loadRooms } from './rooms.js';
 
 let jsPDFReady;
-function loadJsPDF() {
+export function loadJsPDF() {
   jsPDFReady ||= new Promise((resolve, reject) => {
     if (window.jspdf) return resolve(window.jspdf.jsPDF);
     const s = document.createElement('script');
@@ -79,6 +79,15 @@ export async function buildPDF(ctx) {
     if (b.type === 'table') {
       heading(b.title);
       drawTable(doc, b, M, W, () => y, (v) => (y = v), ensure);
+    } else if (b.type === 'text') {
+      heading(b.title);
+      doc.setFont('helvetica', 'normal').setFontSize(9.5).setTextColor(15, 23, 42);
+      for (const line of doc.splitTextToSize(b.text, W)) {
+        ensure(5);
+        doc.text(line, M, y);
+        y += 4.4;
+      }
+      y += 3;
     } else if (b.type === 'image' && b.group === 'Fotos') {
       if (lastGroup !== 'Fotos') heading('Fotos');
       const colW = (W - 6) / 2;
