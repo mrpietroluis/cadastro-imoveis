@@ -119,16 +119,22 @@ export class GLM extends EventTarget {
     this.dispatchEvent(new CustomEvent('log', { detail: line }));
   }
 
-  async connect() {
+  // showAll: lista todos os aparelhos (alguns navegadores do iPad não aplicam bem o filtro por nome).
+  async connect({ showAll = false } = {}) {
     if (!this.supported) throw new Error('Este navegador não tem Bluetooth. No iPad, abra o app pelo navegador Bluefy.');
     this.manualDisconnect = false;
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [
-        ...SERVICES.map((s) => ({ services: [s.service] })),
-        { namePrefix: 'Bosch' }, { namePrefix: 'GLM' }, { namePrefix: 'PLR' },
-      ],
-      optionalServices: SERVICES.map((s) => s.service),
-    });
+    const optionalServices = SERVICES.map((s) => s.service);
+    const device = await navigator.bluetooth.requestDevice(
+      showAll
+        ? { acceptAllDevices: true, optionalServices }
+        : {
+            filters: [
+              ...SERVICES.map((s) => ({ services: [s.service] })),
+              { namePrefix: 'Bosch' }, { namePrefix: 'GLM' }, { namePrefix: 'PLR' },
+            ],
+            optionalServices,
+          }
+    );
     this.useDevice(device);
     await this.attach();
   }
