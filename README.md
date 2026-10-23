@@ -3,6 +3,10 @@
 App pessoal para iPad (web app) que recebe medidas da trena **Bosch GLM 50 C** por Bluetooth.
 A pesquisa que embasou o projeto está em [PESQUISA.md](PESQUISA.md).
 
+**Endereço do app:** https://mrpietroluis.github.io/cadastro-imoveis/ (abrir no iPad pelo navegador Bluefy)
+
+Para publicar uma atualização: `git subtree split --prefix app -b gh-pages` e `git push origin main gh-pages --force`.
+
 ## Ferramentas (abas de cada imóvel)
 
 - **Dados**: identificação, tipo, endereço, inscrição/matrícula, proprietário, área do terreno, data da vistoria, observações.
