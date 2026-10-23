@@ -40,11 +40,14 @@ function renderPill() {
   pill.dataset.status = glm.status;
   pillText.textContent = {
     unsupported: 'Sem Bluetooth',
-    disconnected: 'Conectar trena',
+    disconnected: showAllNext ? 'Procurar todos' : 'Conectar trena',
     connecting: 'Conectando…',
     connected: glm.name,
   }[glm.status];
 }
+
+// Se a trena não apareceu na lista filtrada, o próximo toque mostra todos os aparelhos.
+let showAllNext = false;
 
 pill.addEventListener('click', async () => {
   if (glm.status === 'unsupported') {
@@ -60,10 +63,19 @@ pill.addEventListener('click', async () => {
     return;
   }
   try {
-    await glm.connect();
+    await glm.connect({ showAll: showAllNext });
+    showAllNext = false;
     toast('Trena conectada. Toque num campo de medida e meça.');
   } catch (err) {
-    if (err.name === 'NotFoundError') return glm.log('Seleção cancelada ou nenhuma trena encontrada.');
+    if (err.name === 'NotFoundError') {
+      glm.log('Seleção cancelada ou nenhuma trena encontrada.');
+      if (!showAllNext) {
+        showAllNext = true;
+        renderPill();
+        toast('A trena não apareceu? Toque em “Procurar todos” e escolha “Bosch GLM50C”.', 6000);
+      }
+      return;
+    }
     toast('Não conectou: ' + err.message + ' — veja ⚙ Configurações › Diagnóstico da trena.', 7000);
   }
 });
