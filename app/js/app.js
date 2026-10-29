@@ -5,7 +5,7 @@ import { TOOLS } from './tools/index.js';
 import { roomArea } from './geometry.js';
 import { restoreButton } from './tools/export.js';
 
-export const APP_VERSION = '1.5.0'; // mantenha igual ao VERSION do sw.js
+export const APP_VERSION = '1.6.0'; // mantenha igual ao VERSION do sw.js
 const view = document.getElementById('view');
 let currentPropertyId = null;
 const history = []; // medidas recentes desta sessão
