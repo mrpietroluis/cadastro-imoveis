@@ -295,3 +295,31 @@ textarea.memorial { font: 15px/1.6 Georgia, "Times New Roman", serif; margin-top
   .step { flex: none; }
   .step .txt small { display: none; }
 }
+
+/* ---------- Desenho em tela cheia ---------- */
+.plan-stage { position: relative; height: calc(100vh - var(--top) - 150px); min-height: 480px; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; background: #fff; }
+.plan-stage .plan-wrap { position: absolute; inset: 0; height: auto; min-height: 0; border-radius: 0; box-shadow: none; }
+.plan-add { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.plan-add .btn { box-shadow: var(--shadow); }
+.btn.big { min-height: 52px; padding: 0 24px; font-size: 18px; }
+.plan-stage .plan-tools { position: absolute; right: 12px; bottom: 12px; }
+.plan-hint { position: absolute; left: 12px; bottom: 14px; font-size: 13px; color: var(--muted); background: rgba(255,255,255,.9); padding: 6px 10px; border-radius: 8px; pointer-events: none; }
+.plan-props { position: absolute; top: 12px; right: 12px; bottom: 72px; width: 340px; overflow: auto; background: var(--surface); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(15,23,42,.18); padding: 14px; }
+.plan-props[hidden] { display: none; }
+.props-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.plan-props .mfield { margin: 8px 0; }
+.height-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; }
+.heights .height-row .mfield { margin: 4px 0; }
+.link-btn { min-height: 36px; border: 0; background: transparent; color: var(--accent); padding: 0 4px; }
+.svc-layout.wide { grid-template-columns: 1fr; }
+.svc-layout.wide .steps { position: static; flex-direction: row; overflow-x: auto; }
+.svc-layout.wide .step { flex: none; }
+.svc-layout.wide .step .txt small { display: none; }
+details.more { margin-top: 14px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 16px; }
+details.more summary { font-weight: 700; cursor: pointer; }
+@media (max-width: 860px) {
+  .plan-props { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 60%; border-radius: var(--radius) var(--radius) 0 0; }
+}
+.svc-layout.wide .plan-stage { height: calc(100vh - var(--top) - 290px); min-height: 440px; }
+.plan-stage.full, .svc-layout.wide .plan-stage.full { position: fixed; inset: var(--top) 0 0 0; height: auto; min-height: 0; z-index: 25; border-radius: 0; }
+.plan-stage.full .plan-tools { right: 150px; }
