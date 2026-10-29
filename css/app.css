@@ -323,3 +323,131 @@ details.more summary { font-weight: 700; cursor: pointer; }
 .svc-layout.wide .plan-stage { height: calc(100vh - var(--top) - 290px); min-height: 440px; }
 .plan-stage.full, .svc-layout.wide .plan-stage.full { position: fixed; inset: var(--top) 0 0 0; height: auto; min-height: 0; z-index: 25; border-radius: 0; }
 .plan-stage.full .plan-tools { right: 150px; }
+
+/* =====================================================================
+   IDENTIDADE COTA ZERO (01 Identidade / padrão de marca)
+   Cores: azul-planta #1E4FA0 · papel #F1EEE8 · grafite #141414 · azul-claro #7FA3E0
+   Fontes: Space Grotesk (títulos e texto), IBM Plex Mono (medidas, cotas, etiquetas)
+   Canto reto em tudo (raio-zero); só cartões arredondam (raio-cartao 10px). Sem sombra, sem degradê.
+   ===================================================================== */
+@font-face { font-family: 'Space Grotesk'; src: url('../fonts/space-grotesk-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('../fonts/space-grotesk-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'IBM Plex Mono'; src: url('../fonts/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+
+:root {
+  --azul-planta: #1E4FA0;
+  --azul-claro: #7FA3E0;
+  --papel: #F1EEE8;
+  --papel-linha: #D6D1C7;
+  --grafite: #141414;
+  --cad-fundo: #1D2228;
+  --cad-cartao: #262C33;
+  --cad-borda: #4A5560;
+  --cad-texto: #E8ECEF;
+  --cad-mudo: #9AA5B1;
+  --bg: var(--papel);
+  --surface: #FFFFFF;
+  --ink: var(--grafite);
+  --muted: #555555;
+  --line: var(--papel-linha);
+  --accent: var(--azul-planta);
+  --accent-soft: #DDE6F5;
+  --ok: #1F7A4A;
+  --radius: 10px;
+  --shadow: none;
+  --font-titulo: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+body {
+  font-family: var(--font-titulo);
+  font-weight: 500;
+  background-color: var(--papel);
+  background-image:
+    linear-gradient(rgba(214, 209, 199, .45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 209, 199, .45) 1px, transparent 1px);
+  background-size: 27px 27px;
+}
+h1, h2, h3 { font-family: var(--font-titulo); font-weight: 700; letter-spacing: -0.02em; }
+h1 { font-size: 32px; letter-spacing: -0.035em; }
+
+/* Cabeçalho: tela de CAD com o símbolo e o nome */
+.topbar {
+  background-color: var(--cad-fundo);
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+  background-size: 27px 27px;
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.brand img { width: 30px; height: 30px; display: block; }
+.brand-name { font-family: var(--font-titulo); font-weight: 700; font-size: 21px; letter-spacing: -0.01em; color: var(--papel); }
+.brand-name b { font-weight: 700; color: rgba(241, 238, 232, .6); }
+.crumbs, .crumbs a { color: var(--cad-mudo); }
+.crumbs span:last-child { color: var(--cad-texto); }
+.glm-last { font-family: var(--font-mono); color: var(--azul-claro); }
+.glm-pill { border-radius: 0; background: var(--cad-cartao); border-color: var(--cad-borda); font-family: var(--font-mono); font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }
+.glm-measure { border-radius: 0; box-shadow: none; background: var(--azul-planta); font-family: var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+
+/* Componentes: canto reto, sem sombra */
+.btn { border-radius: 0; border-color: var(--grafite); font-family: var(--font-titulo); font-weight: 700; }
+.btn.primary { background: var(--azul-planta); border-color: var(--azul-planta); }
+.btn.danger { border-radius: 0; }
+.btn.mode.on { background: var(--grafite); color: var(--papel); }
+input, select, textarea { border-radius: 0; border-color: var(--papel-linha); font-family: var(--font-titulo); font-weight: 500; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--azul-planta); outline-offset: -1px; border-color: var(--azul-planta); }
+.card, .panel, .stat, .plan-props, .steps, details.more { box-shadow: none; border: 1px solid var(--papel-linha); }
+.plan-stage { box-shadow: none; border: 1px solid var(--papel-linha); border-radius: 0; }
+.plan-add .btn, .plan-tools .btn, .plan-stage .plan-tools .btn { box-shadow: none; }
+.tabs { border-radius: 0; background: #E6E1D7; }
+.tab { border-radius: 0; font-weight: 700; }
+.tab.active { box-shadow: none; background: var(--surface); }
+.segs, .seg { border-radius: 0; }
+.seg.on { box-shadow: none; }
+.toast { border-radius: 0; background: var(--cad-fundo); box-shadow: none; font-family: var(--font-titulo); }
+.tray-toggle { border-radius: 0; background: var(--cad-fundo); box-shadow: none; font-family: var(--font-mono); letter-spacing: .08em; text-transform: uppercase; font-size: 14px; }
+.tray-list { border-radius: 0; box-shadow: none; border: 1px solid var(--papel-linha); }
+.empty { border-radius: 0; border-color: var(--papel-linha); }
+.progress { border-radius: 0; }
+.progress i { background: var(--azul-planta); }
+
+/* Etiquetas e medidas em mono (MAIÚSCULAS, espaçamento 0,12em) */
+.prop-kind, .field > span, .mfield-label, .stat small, .solution small, .props-head b {
+  font-family: var(--font-mono); font-weight: 500; text-transform: uppercase; letter-spacing: .12em; font-size: 12px;
+}
+.prop-kind { color: var(--azul-planta); }
+.chip { border-radius: 0; font-family: var(--font-mono); letter-spacing: .06em; }
+.chip.done { background: var(--azul-planta); color: var(--papel); }
+.mfield { border-radius: 0; background: #FFFFFF; border-color: var(--papel-linha); }
+.mfield-input, .mfield-unit, .stat b, .room-results b, .tray-item b, .calc, .step .num, .prop-meta span:nth-child(2), .gap {
+  font-family: var(--font-mono); font-weight: 500;
+}
+.mfield.armed { border-color: var(--azul-planta); background: var(--accent-soft); box-shadow: none; }
+.mfield.armed::after { border-radius: 0; background: var(--azul-planta); font-family: var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.mfield.flash { animation: flash-cz .7s ease; }
+@keyframes flash-cz { 0% { background: #DDE6F5; border-color: var(--azul-planta); } }
+.step { border-radius: 0; }
+.step.active { background: var(--accent-soft); }
+.step.active .num, .step.done .num { background: var(--azul-planta); color: var(--papel); }
+.step .num { border-radius: 0; }
+.opt { border-radius: 0; }
+.opt .box { border-radius: 0; }
+.opt.on .box { background: var(--azul-planta); border-color: var(--azul-planta); }
+.svc-pick.on { border-color: var(--azul-planta); }
+.problem.on { border-color: var(--azul-planta); }
+.solution { border-radius: 0; background: var(--accent-soft); }
+.solution small { color: var(--azul-planta); }
+.note { border-radius: 0; background: #F6F2E8; border: 1px solid var(--papel-linha); }
+.switch i, .switch i::after { border-radius: 0; }
+.switch input:checked + i { background: var(--azul-planta); }
+.dir { border-radius: 0; }
+.dir.on { background: var(--azul-planta); border-color: var(--azul-planta); }
+.diag { border-radius: 0; background: var(--cad-fundo); color: var(--azul-claro); }
+.badge { border-radius: 0; background: var(--azul-planta); font-family: var(--font-mono); }
+.photo-tile, .field-photo { border-radius: 0; }
+.modal.photo-editor, .editor-bar { background: var(--cad-fundo); }
+textarea.memorial { font-family: var(--font-titulo); font-weight: 500; }
+.plan-hint { border-radius: 0; font-family: var(--font-mono); font-size: 12px; letter-spacing: .04em; }
+.plan-hint { max-width: calc(100% - 560px); }
+@media (max-width: 1000px) { .plan-hint { display: none; } }
+.seg.on, .editor-bar .seg.on { background: var(--azul-planta); color: var(--papel); }
+.segs { background: #E6E1D7; }

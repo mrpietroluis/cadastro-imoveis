@@ -408,8 +408,9 @@ export default {
         const files = async () => {
           const out = [{ name: `${name}-ficha.pdf`, blob: await buildFicha({ property, rec, def, steps, valueText, isOn, company }) }];
           if (hasPlan) {
-            out.push({ name: `${name}-planta-baixa.pdf`, blob: (await buildPrancha({ property, rooms, rec, def, company })).blob });
-            out.push({ name: `${name}-planta-baixa.dxf`, blob: buildDXF(rooms) });
+            const pr = await buildPrancha({ property, rooms, rec, def, company });
+            out.push({ name: `${name}-planta-baixa.pdf`, blob: pr.blob });
+            out.push({ name: `${name}-planta-baixa.dxf`, blob: buildDXF(rooms, property, pr.escala) });
           }
           return out;
         };
@@ -453,12 +454,12 @@ export default {
               await save();
               shareOrDownload(await buildZip(await files()), `${name}.zip`);
             }, true),
-            hasPlan ? action('Prancha da planta (PDF A3)', 'Planta baixa com cotas, áreas, quadro de áreas e carimbo, em escala normalizada.', 'Gerar prancha', async () => {
+            hasPlan ? action('Prancha da planta (PDF A3)', 'Planta baixa na NBR 6492: cotas, esquadrias P/J, quadros de áreas e de esquadrias, escala gráfica, norte e carimbo.', 'Gerar prancha', async () => {
               const { blob, escala } = await buildPrancha({ property, rooms, rec, def, company });
               toast(`Prancha na escala 1:${escala}.`);
               shareOrDownload(blob, `${name}-planta-baixa.pdf`);
             }) : null,
-            hasPlan ? action('Arquivo CAD (DXF)', 'Abre no AutoCAD, ZWCAD e outros. Camadas: paredes, cotas e textos. Unidade: metro.', 'Gerar DXF', async () => shareOrDownload(buildDXF(rooms), `${name}-planta-baixa.dxf`)) : null,
+            hasPlan ? action('Arquivo CAD (DXF)', 'Abre no AutoCAD, ZWCAD e outros. Camadas: paredes, cotas e textos. Unidade: metro.', 'Gerar DXF', async () => { const { escala } = await buildPrancha({ property, rooms, rec, def, company }); shareOrDownload(buildDXF(rooms, property, escala), `${name}-planta-baixa.dxf`); }) : null,
             action('Ficha do serviço (PDF A4)', 'Tudo o que foi preenchido, pendências com soluções e memorial.', 'Gerar ficha', async () => shareOrDownload((await files())[0].blob, `${name}-ficha.pdf`)))
         );
       }

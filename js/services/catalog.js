@@ -362,20 +362,20 @@ export const SERVICES = [
       },
     ],
     problems: [
-      { id: 'areaMaior', problem: 'Área construída real maior que a averbada', solution: 'Caminho: projeto de regularização (as built) na prefeitura → habite-se → CND da obra na Receita → averbação da construção no cartório.', docs: ['Planta e memorial do existente', 'ART/RRT', 'Matrícula atualizada', 'IPTU'] },
-      { id: 'terrenoDif', problem: 'Área do terreno medida diferente da matrícula', solution: 'Fazer a retificação de área direto no cartório (art. 213 da Lei 6.015/73), com planta, memorial descritivo, ART/RRT e assinatura dos confrontantes.', docs: ['Planta do terreno', 'Memorial descritivo', 'ART/RRT', 'Anuência dos confrontantes'] },
+      { id: 'areaMaior', problem: 'Área construída real maior que a averbada', solution: 'Caminho: projeto de regularização (as built) na prefeitura → habite-se → CND da obra na Receita → averbação da construção no cartório.', docs: ['Planta e memorial do existente', 'TRT', 'Matrícula atualizada', 'IPTU'] },
+      { id: 'terrenoDif', problem: 'Área do terreno medida diferente da matrícula', solution: 'Fazer a retificação de área direto no cartório (art. 213 da Lei 6.015/73), com planta, memorial descritivo, TRT e assinatura dos confrontantes.', docs: ['Planta do terreno', 'Memorial descritivo', 'TRT', 'Anuência dos confrontantes'] },
       { id: 'recuos', problem: 'Construção não respeita recuos ou taxa de ocupação', solution: 'Verificar se o município tem lei de regularização (anistia) em vigor; ela pode aceitar com pagamento de contrapartida ou exigir adequação.' },
       { id: 'falecido', problem: 'Proprietário da matrícula faleceu', solution: 'É preciso fazer o inventário e a partilha antes (ou junto) da regularização; o memorial descritivo serve para o inventário.' },
       { id: 'semMatricula', problem: 'Imóvel sem matrícula ou só com contrato de gaveta', solution: 'Avaliar usucapião (pode ser extrajudicial, no cartório) ou, se for um núcleo informal, Reurb.' },
       { id: 'semCnd', problem: 'Obra sem CNO / sem recolhimento de INSS', solution: 'Abrir o CNO, declarar a obra no SERO da Receita e emitir a CND. Obras concluídas há mais de 5 anos podem ter o INSS reduzido ou dispensado se houver prova da data (decadência).', docs: ['Habite-se ou prova da data de conclusão', 'Notas fiscais', 'Planta com área'] },
       { id: 'loteMinimo', problem: 'Lote resultante abaixo da área mínima da lei', solution: 'O desmembramento não é aprovado. Alternativa: instituir condomínio ou manter fração ideal na mesma matrícula.', when: 'desmembramento' },
       { id: 'donosDif', problem: 'Lotes a unificar com proprietários diferentes', solution: 'Primeiro igualar a titularidade (compra e venda ou doação entre eles); só depois o cartório faz a unificação.', when: 'remembramento' },
-      { id: 'semPlanoReforma', problem: 'Reforma sem plano aprovado pelo condomínio', solution: 'Fazer o plano de reforma conforme a NBR 16.280, com ART/RRT, e protocolar com o síndico antes de começar a obra.', when: 'condominio' },
+      { id: 'semPlanoReforma', problem: 'Reforma sem plano aprovado pelo condomínio', solution: 'Fazer o plano de reforma conforme a NBR 16.280, com TRT, e protocolar com o síndico antes de começar a obra.', when: 'condominio' },
       { id: 'confrontanteRecusa', problem: 'Confrontante se recusa a assinar', solution: 'O cartório notifica o confrontante; se ele impugnar, o caso pode ir para via judicial.', when: ['retificacao', 'usucapiao'] },
     ],
     deliverables: [
       { id: 'asbuilt', label: 'Projeto de regularização (as built)', when: ['prefeitura', 'habitese'] },
-      { id: 'art', label: 'ART/RRT' },
+      { id: 'art', label: 'TRT' },
       { id: 'memorial', label: 'Memorial descritivo', when: ['retificacao', 'desmembramento', 'remembramento', 'usucapiao', 'averbacao'] },
       { id: 'cnd', label: 'CND da obra', when: ['receita', 'averbacao'] },
       { id: 'protocolo', label: 'Protocolo na prefeitura', when: ['prefeitura', 'habitese', 'desmembramento', 'remembramento'] },
@@ -446,7 +446,7 @@ export const SERVICES = [
     ],
     deliverables: [
       { id: 'texto', label: 'Memorial descritivo assinado' },
-      { id: 'art', label: 'ART/RRT do memorial' },
+      { id: 'art', label: 'TRT do memorial' },
       { id: 'planta', label: 'Planta de situação/locação' },
     ],
   },
@@ -485,7 +485,7 @@ export function memorialText(v, finalidade, company = {}) {
   }
   if (v.nUnidades) p.push(`CONDOMÍNIO: ${v.nUnidades} unidades autônomas${num(v.areaComum) ? `, com área de uso comum de ${a(v.areaComum)}` : ''}.${v.fracao ? ` Frações ideais: ${v.fracao}` : ''}`);
   p.push(`${t(v.cidade)}, ${new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })}.`);
-  p.push(`_______________________________\n${company.responsavel || 'Responsável técnico'} - ${company.registro || 'CAU/CREA nº ___'}`);
+  p.push(`_______________________________\n${company.responsavel || 'Responsável técnico'} - ${company.registro || 'CRT nº ___'}`);
   return p.join('\n\n');
 }
 
