@@ -451,3 +451,4 @@ textarea.memorial { font-family: var(--font-titulo); font-weight: 500; }
 @media (max-width: 1000px) { .plan-hint { display: none; } }
 .seg.on, .editor-bar .seg.on { background: var(--azul-planta); color: var(--papel); }
 .segs { background: #E6E1D7; }
+.mono-btn { font-family: var(--font-mono); font-weight: 500; letter-spacing: .04em; }

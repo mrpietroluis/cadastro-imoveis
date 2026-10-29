@@ -99,7 +99,6 @@ export const SERVICES = [
         title: 'Planta baixa',
         tool: 'plan',
         fields: [
-          { id: 'espParede', label: 'Espessura das paredes', type: 'measure', hint: 'Meça no vão de uma porta.' },
           { id: 'esquadrias', label: 'Portas e janelas (observações)', type: 'textarea', placeholder: 'Medidas de vãos, peitoris, tipos…' },
         ],
       },

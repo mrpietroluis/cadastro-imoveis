@@ -6,8 +6,8 @@ import { h, fmt, measureField, arm, confirmDialog } from '../ui.js';
 import { roomArea, closingGap, bounds, DIR_ARROWS, DIRS, ROOM_KINDS } from '../geometry.js';
 import { loadRooms, heightEditor, newRoomHeights } from './rooms.js';
 import {
-  getPlan, worldPoints, segments, segLen, openingGeom, renderWalls, distToSeg, snapPoints,
-  DOOR_TYPES, WINDOW_TYPES, openingLabels,
+  getPlan, worldPoints, segments, segLen, openingGeom, renderWalls, distToSeg, snapPoints, planExtents,
+  DOOR_TYPES, WINDOW_TYPES, openingLabels, DEFAULT_T, HALF_T,
 } from '../plan.js';
 
 const SNAP = 0.15; // metros: distância para "grudar" na parede de outro cômodo
@@ -15,6 +15,8 @@ const GRID = 0.05;
 const round = (n) => Math.round(n / GRID) * GRID;
 
 function contentBounds(rooms, plan) {
+  const ext = plan ? planExtents(rooms, plan) : null;
+  if (ext) return ext;
   const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   const add = (x, y) => {
     b.minX = Math.min(b.minX, x); b.minY = Math.min(b.minY, y);
@@ -39,8 +41,16 @@ function canvasAdapter(g, v, print) {
   const X = (x) => v.ox + x * v.scale;
   const Y = (y) => v.oy + y * v.scale;
   const k = print ? 1.4 : 1;
-  const styles = { wall: [3 * k, '#141414', []], half: [1.4 * k, '#141414', []], thin: [1.3 * k, '#141414', []], hair: [0.8 * k, '#64748b', []], hidden: [1.2, '#94a3b8', [6, 5]] };
+  const styles = { wall: [1.4 * k, '#141414', []], half: [1 * k, '#141414', []], thin: [1.3 * k, '#141414', []], hair: [0.8 * k, '#64748b', []], hidden: [1.2, '#94a3b8', [6, 5]] };
+  const fills = { wall: print ? '#9a9a9a' : '#4a4f56', half: print ? '#d9d9d9' : '#cfcac0' };
   return {
+    band(poly, st) {
+      g.fillStyle = fills[st] || fills.wall;
+      g.beginPath();
+      poly.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+      g.closePath();
+      g.fill();
+    },
     line(x1, y1, x2, y2, st) {
       const [w, c, d] = styles[st];
       g.lineWidth = w; g.strokeStyle = c; g.setLineDash(d); g.lineCap = 'square';
@@ -183,22 +193,22 @@ function pointInPoly([px, py], pts) {
 }
 
 // Ajusta (x, y) de um cômodo para alinhar bordas com outros cômodos próximos.
-function snapRoom(room, rooms, x, y) {
+function snapRoom(room, rooms, x, y, gap = 0, tol = SNAP) {
   const b = bounds(room);
   const mine = { l: x + b.minX, r: x + b.maxX, t: y + b.minY, b: y + b.maxY };
-  let bestX = { d: SNAP, v: null };
-  let bestY = { d: SNAP, v: null };
+  let bestX = { d: tol, v: null };
+  let bestY = { d: tol, v: null };
   for (const o of rooms) {
     if (o === room) continue;
     const ob = bounds(o);
     const other = { l: o.x + ob.minX, r: o.x + ob.maxX, t: o.y + ob.minY, b: o.y + ob.maxY };
-    for (const [a, c] of [['l', 'r'], ['r', 'l'], ['l', 'l'], ['r', 'r']]) {
-      const d = Math.abs(mine[a] - other[c]);
-      if (d < bestX.d) bestX = { d, v: x + other[c] - mine[a] };
+    for (const [a, c, gp] of [['l', 'r', gap], ['r', 'l', -gap], ['l', 'l', 0], ['r', 'r', 0]]) {
+      const d = Math.abs(mine[a] - (other[c] + gp));
+      if (d < bestX.d) bestX = { d, v: x + other[c] + gp - mine[a] };
     }
-    for (const [a, c] of [['t', 'b'], ['b', 't'], ['t', 't'], ['b', 'b']]) {
-      const d = Math.abs(mine[a] - other[c]);
-      if (d < bestY.d) bestY = { d, v: y + other[c] - mine[a] };
+    for (const [a, c, gp] of [['t', 'b', gap], ['b', 't', -gap], ['t', 't', 0], ['b', 'b', 0]]) {
+      const d = Math.abs(mine[a] - (other[c] + gp));
+      if (d < bestY.d) bestY = { d, v: y + other[c] + gp - mine[a] };
     }
   }
   return [bestX.v ?? round(x), bestY.v ?? round(y)];
@@ -379,7 +389,7 @@ export default {
         const end = snapEnd([preview.x1, preview.y1], p);
         Object.assign(preview, { x2: end.p[0], y2: end.p[1], snap: end.snap });
       } else if (drag.hit?.t === 'room') {
-        [drag.hit.room.x, drag.hit.room.y] = snapRoom(drag.hit.room, rooms, drag.origin[0] + dx / v.scale, drag.origin[1] + dy / v.scale);
+        [drag.hit.room.x, drag.hit.room.y] = snapRoom(drag.hit.room, rooms, drag.origin[0] + dx / v.scale, drag.origin[1] + dy / v.scale, plan.t, Math.max(SNAP, 22 / v.scale));
       } else if (drag.hit?.t === 'wall') {
         const w = drag.hit.wall;
         const [x1, y1, x2, y2] = drag.origin;
@@ -560,6 +570,15 @@ export default {
       setSide(
         head('Parede do cômodo'),
         h('p', {}, h('b', {}, room.name || room.kind), ` · ${fmt(segLen(s))} m`),
+        exists ? measureField({
+          label: 'Espessura desta parede',
+          value: s.t,
+          hint: `Padrão do imóvel: ${fmt(plan.t)} m. Ela cresce para fora do cômodo.`,
+          onChange: async (n) => {
+            room.edgeT = { ...(room.edgeT || {}), [i]: n > 0 ? n : undefined };
+            await save(room);
+          },
+        }) : null,
         h('div', { class: 'field' }, h('span', {}, 'Esta parede existe?'), seg2([[true, 'Sim'], [false, 'Não (vão aberto)']], exists, async (val) => {
           const set = new Set(room.hiddenEdges || []);
           val ? set.delete(i) : set.add(i);
@@ -609,6 +628,7 @@ export default {
           savePlan();
           select({ t: 'wall', wall: w });
         })),
+        measureField({ label: 'Espessura', value: w.t > 0 ? w.t : w.kind === 'half' ? HALF_T : plan.t, onChange: (n) => { w.t = n > 0 ? n : undefined; savePlan(); draw(); } }),
         w.kind === 'half' ? measureField({ label: 'Altura da meia parede', value: w.h, onChange: (n) => { w.h = n; savePlan(); draw(); } }) : null,
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => addOpening('door', s, segLen(s) / 2) }, '+ Porta'),
@@ -707,6 +727,31 @@ export default {
           h('button', { class: 'btn', onclick: close }, 'Fechar contorno')));
     }
 
+    // Espessura padrão das paredes do imóvel (cada parede pode ter a sua nas propriedades).
+    const tBtn = h('button', { class: 'btn mono-btn', title: 'Espessura padrão das paredes', onclick: () => defaultsPanel() }, `Paredes ${fmt(plan.t)} m`);
+    function defaultsPanel() {
+      selection = { t: 'defaults' };
+      side.hidden = false;
+      hint.hidden = true;
+      draw();
+      setSide(
+        head('Padrões da planta'),
+        measureField({
+          label: 'Espessura padrão das paredes',
+          value: plan.t,
+          hint: 'Vale para todas as paredes sem espessura própria. Meça no vão de uma porta.',
+          onChange: async (n) => {
+            if (!(n > 0)) return;
+            await ctx.saveProperty({ wallT: n });
+            tBtn.textContent = `Paredes ${fmt(plan.t)} m`;
+            draw();
+          },
+        }),
+        h('p', { class: 'muted' }, 'O levantamento mede as faces internas: a parede cresce para fora do cômodo. Ao arrastar, os cômodos vizinhos encaixam deixando o espaço da parede entre eles.')
+      );
+      arm(side.querySelector('.mfield'));
+    }
+
     const modeBtn = (m, label) => (modeBtns[m] = h('button', { class: 'btn mode', onclick: () => setMode(m) }, label));
     body.replaceChildren(
       h('div', { class: 'plan-stage' },
@@ -716,7 +761,8 @@ export default {
           modeBtn('wall', '╱ Parede'),
           modeBtn('door', '◜ Porta'),
           modeBtn('window', '▭ Janela'),
-          h('button', { class: 'btn', onclick: () => addRoom('poly') }, 'Cômodo irregular')),
+          h('button', { class: 'btn', onclick: () => addRoom('poly') }, 'Cômodo irregular'),
+          tBtn),
         h('div', { class: 'plan-tools' },
           h('button', { class: 'btn', onclick: () => zoom(1.25) }, '+'),
           h('button', { class: 'btn', onclick: () => zoom(0.8) }, '−'),

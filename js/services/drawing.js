@@ -13,7 +13,7 @@
 //            quadro de áreas e quadro de esquadrias
 import { loadJsPDF } from '../tools/export.js';
 import { roomArea, roomPerimeter, bounds, heightsText } from '../geometry.js';
-import { getPlan, worldPoints, segments, segLen, renderWalls, openingGeom, openingLabels, openingSchedule } from '../plan.js';
+import { getPlan, worldPoints, segments, renderWalls, openingGeom, openingLabels, openingSchedule, planExtents } from '../plan.js';
 
 // Logo da Cota Zero (01 Identidade) para carimbos e cabeçalhos dos documentos.
 let logoData;
@@ -46,35 +46,31 @@ export function lineGroup(escala) {
 // Alturas de texto (mm) → corpo tipográfico (pt) da Tabela A.3.
 const PT = { 7: 28, 5: 20, 3.5: 14, 2.5: 10, 1.8: 7.5 };
 
-function extents(rooms, plan) {
-  const xs = [];
-  const ys = [];
-  for (const r of rooms) for (const [x, y] of worldPoints(r)) { xs.push(x); ys.push(y); }
-  for (const w of plan.walls) { xs.push(w.x1, w.x2); ys.push(w.y1, w.y2); }
-  if (!xs.length) return null;
-  return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
-}
-
-// Pontos das correntes de cotas externas de um lado (Figura A.22): cantos e extremos dos vãos
-// das paredes que estão no contorno daquele lado.
+// Pontos das correntes de cotas externas de um lado (Figuras A.21 e A.22): as duas faces das paredes
+// do contorno e os extremos dos vãos de portas e janelas, de modo que a corrente mostre
+// espessura da parede, vão interno, vãos das esquadrias e o total externo.
 function chainPoints(side, e, segs, geoms) {
   const horiz = side === 'top' || side === 'bottom';
   const line = side === 'top' ? e.minY : side === 'bottom' ? e.maxY : side === 'left' ? e.minX : e.maxX;
   const tol = 0.03;
   const pts = new Set();
+  const coord = (p) => +(horiz ? p[0] : p[1]).toFixed(3);
   for (const s of segs) {
     if (s.kind === 'hidden') continue;
-    const on = horiz ? Math.abs(s.y1 - line) < tol && Math.abs(s.y2 - line) < tol : Math.abs(s.x1 - line) < tol && Math.abs(s.x2 - line) < tol;
-    if (!on) continue;
-    pts.add(+(horiz ? s.x1 : s.y1).toFixed(3));
-    pts.add(+(horiz ? s.x2 : s.y2).toFixed(3));
+    const parallel = horiz ? Math.abs(s.u[1]) < 0.01 : Math.abs(s.u[0]) < 0.01;
+    if (!parallel) continue;
+    const across = (o) => (horiz ? s.y1 + s.n[1] * o : s.x1 + s.n[0] * o);
+    if (Math.abs(across(s.o0) - line) > tol && Math.abs(across(s.o1) - line) > tol) continue;
+    const start = [s.x1 - s.u[0] * s.ext0, s.y1 - s.u[1] * s.ext0];
+    const end = [s.x2 + s.u[0] * s.ext1, s.y2 + s.u[1] * s.ext1];
+    [start, end, [s.x1, s.y1], [s.x2, s.y2]].forEach((p) => pts.add(coord(p)));
     for (const g of geoms) {
       if (g.seg !== s) continue;
-      pts.add(+(horiz ? g.a[0] : g.a[1]).toFixed(3));
-      pts.add(+(horiz ? g.b[0] : g.b[1]).toFixed(3));
+      pts.add(coord(g.a));
+      pts.add(coord(g.b));
     }
   }
-  return [...pts].sort((a, b) => a - b);
+  return [...pts].sort((x, y) => x - y);
 }
 
 // ---------- Prancha A3 ----------
@@ -101,8 +97,8 @@ export async function buildPrancha({ property, rooms, def, company }) {
   doc.setLineWidth(0.35).line(colX, M, colX, H - M);
 
   // ---------- desenho ----------
-  const area = { x: ML + 8, y: M + 8, w: colX - ML - 16, h: H - 2 * M - 40 };
-  const e = extents(rooms, plan);
+  const area = { x: ML + 5, y: M + 6, w: colX - ML - 10, h: H - 2 * M - 34 };
+  const e = planExtents(rooms, plan);
   let escala = 50;
   let k = 1000 / escala;
   const segs = segments(rooms, plan);
@@ -110,7 +106,7 @@ export async function buildPrancha({ property, rooms, def, company }) {
   if (e) {
     const bw = Math.max(e.maxX - e.minX, 0.5);
     const bh = Math.max(e.maxY - e.minY, 0.5);
-    const reserva = 22; // mm para as cotas externas nos dois lados
+    const reserva = 17; // mm para as cotas externas nos dois lados
     escala = ESCALAS.find((d) => (bw * 1000) / d <= area.w - 2 * reserva && (bh * 1000) / d <= area.h - 2 * reserva) || 2000;
     k = 1000 / escala;
     const [XL, L, E] = lineGroup(escala);
@@ -120,8 +116,16 @@ export async function buildPrancha({ property, rooms, def, company }) {
     const Y = (y) => oy + y * k;
 
     // Paredes e esquadrias (mesma rotina do editor, com pesos da Tabela A.2)
-    const widths = { wall: XL, half: L, thin: L, hair: E, hidden: E };
+    // Parede cortada com preenchimento (hachura sólida) → contorno em linha larga (Tabela A.1)
+    const widths = { wall: L, half: E, thin: L, hair: E, hidden: E };
+    void XL;
     renderWalls({
+      band(poly, st) {
+        const pts = poly.map(([x, y]) => [X(x), Y(y)]);
+        const deltas = pts.slice(1).map(([x, y], i) => [x - pts[i][0], y - pts[i][1]]);
+        doc.setFillColor(st === 'half' ? 225 : 175);
+        doc.lines(deltas, pts[0][0], pts[0][1], [1, 1], 'F', true);
+      },
       line(x1, y1, x2, y2, st) { doc.setLineWidth(widths[st]).setDrawColor(0).line(X(x1), Y(y1), X(x2), Y(y2)); },
       arc(cx, cy, r, a0, a1, st) {
         const sweep = ((a1 - a0 + 540) % 360) - 180;
@@ -424,7 +428,7 @@ export function buildDXF(rooms, property = {}, escala = 50) {
   const out = [];
   const g = (code, value) => out.push(String(code), String(value));
   const layers = [
-    ['ARQ-PAREDE', 7], ['ARQ-MEIA-PAREDE', 4], ['ARQ-ESQUADRIA', 4], ['ARQ-ESQUADRIA-GIRO', 1],
+    ['ARQ-PAREDE', 7], ['ARQ-PAREDE-HACHURA', 8], ['ARQ-MEIA-PAREDE', 4], ['ARQ-ESQUADRIA', 4], ['ARQ-ESQUADRIA-GIRO', 1],
     ['ARQ-COTA', 1], ['ARQ-TEXTO', 3], ['ARQ-DESIGNACAO', 2],
   ];
   const mm = (h) => (h * escala) / 1000; // altura impressa (mm) → metros no modelo
@@ -442,6 +446,12 @@ export function buildDXF(rooms, property = {}, escala = 50) {
   };
   const layerOf = { wall: 'ARQ-PAREDE', half: 'ARQ-MEIA-PAREDE', thin: 'ARQ-ESQUADRIA', hair: 'ARQ-ESQUADRIA-GIRO', hidden: null };
   renderWalls({
+    // preenchimento da parede como SOLID (vértices na ordem 1, 2, 4, 3 do DXF)
+    band(poly, st) {
+      const [p0, p1, p2, p3] = poly;
+      g(0, 'SOLID'); g(8, st === 'half' ? 'ARQ-MEIA-PAREDE' : 'ARQ-PAREDE-HACHURA');
+      [[10, 20, p0], [11, 21, p1], [12, 22, p3], [13, 23, p2]].forEach(([cx, cy, p]) => { g(cx, f(p[0])); g(cy, f(-p[1])); g(cx + 20, 0); });
+    },
     line(x1, y1, x2, y2, st) { if (layerOf[st]) line(layerOf[st], x1, y1, x2, y2); },
     arc(cx, cy, r, a0, a1, st) {
       const sweep = ((a1 - a0 + 540) % 360) - 180;
