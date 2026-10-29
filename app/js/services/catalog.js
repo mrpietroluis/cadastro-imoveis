@@ -95,13 +95,10 @@ export const SERVICES = [
       { id: 'modelo3d', label: 'Entrega em modelo 3D' },
     ],
     sections: [
-      IMOVEL,
-      VISITA,
       {
         title: 'Planta baixa',
         tool: 'plan',
         fields: [
-          { id: 'peDireito', label: 'Pé-direito padrão', type: 'measure' },
           { id: 'espParede', label: 'Espessura das paredes', type: 'measure', hint: 'Meça no vão de uma porta.' },
           { id: 'esquadrias', label: 'Portas e janelas (observações)', type: 'textarea', placeholder: 'Medidas de vãos, peitoris, tipos…' },
         ],
@@ -130,6 +127,8 @@ export const SERVICES = [
           { id: 'fotoQuadro', label: 'Foto do quadro elétrico', type: 'photo' },
         ],
       },
+      VISITA,
+      IMOVEL,
       {
         title: 'Formato de entrega',
         fields: [

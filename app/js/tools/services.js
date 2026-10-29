@@ -163,7 +163,7 @@ export default {
               go('');
             },
           }, '🗑')),
-        h('div', { class: 'svc-layout' }, nav, h('div', {}, h('h2', { class: 'step-title' }, step.title), content, footer))
+        h('div', { class: 'svc-layout' + (step.kind === 'tool' ? ' wide' : '') }, nav, h('div', {}, h('h2', { class: 'step-title' }, step.title), content, footer))
       );
 
       if (step.kind === 'form') renderForm(step.section, content);
@@ -316,7 +316,8 @@ export default {
           }, label)));
           await (mode === 'sketch' ? sketchTool : roomsTool).render(inner, ctx);
         };
-        box.replaceChildren(fieldsBox, seg, inner);
+        const hasFields = section.fields.some((f) => isOn(f.when, rec.options));
+        box.replaceChildren(seg, inner, hasFields ? h('details', { class: 'more' }, h('summary', {}, 'Outras informações da planta'), fieldsBox) : '');
         await draw();
       }
 

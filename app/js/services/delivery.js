@@ -5,7 +5,7 @@
 //   NBR 6492 (representação de projetos): escala normalizada, cotas em metros, nome/área/pé-direito
 //   de cada ambiente, quadro de áreas, título do desenho com escala.
 import { loadJsPDF } from '../tools/export.js';
-import { roomPoints, roomArea, roomPerimeter, bounds } from '../geometry.js';
+import { roomPoints, roomArea, roomPerimeter, bounds, heightsText } from '../geometry.js';
 import { fmt } from '../ui.js';
 
 const ESCALAS = [20, 25, 50, 75, 100, 125, 200, 250, 500, 1000];
@@ -90,7 +90,8 @@ export async function buildPrancha({ property, rooms, rec, def, company }) {
       doc.text((room.name || room.kind || '').toUpperCase(), cx, cy - 3, { align: 'center' });
       doc.setFont('helvetica', 'normal').setFontSize(7.5);
       doc.text(`A = ${n2(roomArea(room))} m²`, cx, cy + 1, { align: 'center' });
-      if (room.height) doc.text(`P.D. = ${n2(room.height)}`, cx, cy + 4.6, { align: 'center' });
+      const pd = heightsText(room, n2);
+      if (pd) doc.text(`P.D. = ${pd}`, cx, cy + 4.6, { align: 'center' });
     }
 
     // Cotas externas totais

@@ -1,9 +1,9 @@
 // Ferramenta: croqui da planta. Cada cômodo vira uma forma arrastável, com cotas.
 // Retângulos usam largura × comprimento; formas irregulares são desenhadas parede a parede.
 import { uid } from '../db.js';
-import { h, fmt, measureField, arm } from '../ui.js';
-import { roomPoints, roomArea, closingGap, bounds, DIR_ARROWS, DIRS } from '../geometry.js';
-import { loadRooms } from './rooms.js';
+import { h, fmt, measureField, arm, confirmDialog } from '../ui.js';
+import { roomPoints, roomArea, closingGap, bounds, DIR_ARROWS, DIRS, ROOM_KINDS } from '../geometry.js';
+import { loadRooms, heightEditor, newRoomHeights } from './rooms.js';
 
 const SNAP = 0.15; // metros: distância para "grudar" na parede de outro cômodo
 const GRID = 0.05;
@@ -143,8 +143,9 @@ export default {
     let v = null;
 
     const canvas = h('canvas', { class: 'plan' });
-    const side = h('div', { class: 'plan-side' });
+    const side = h('div', { class: 'plan-props', hidden: true });
     const wrap = h('div', { class: 'plan-wrap' }, canvas);
+    const hint = h('div', { class: 'plan-hint' }, 'Toque num cômodo para ver as propriedades. Arraste para encaixar nos vizinhos.');
     const g = canvas.getContext('2d');
 
     // Posições iniciais: cômodos sem posição vão lado a lado.
@@ -257,15 +258,9 @@ export default {
     function select(room) {
       selected = room;
       draw();
-      if (!room) {
-        side.replaceChildren(
-          h('h3', {}, 'Croqui'),
-          h('p', { class: 'muted' }, 'Arraste os cômodos para montar a planta — eles grudam nas paredes vizinhas. Toque num cômodo para editar. Pinça ou botões para zoom.'),
-          h('button', { class: 'btn primary block', onclick: () => addRoom('poly') }, '+ Cômodo por paredes'),
-          h('button', { class: 'btn block', onclick: () => addRoom('rect') }, '+ Cômodo retangular')
-        );
-        return;
-      }
+      side.hidden = !room;
+      hint.hidden = !!room;
+      if (!room) return side.replaceChildren();
       const name = h('input', { value: room.name || '', placeholder: 'Nome' });
       name.addEventListener('change', () => { room.name = name.value; save(room); });
 
@@ -283,22 +278,39 @@ export default {
         },
       }, label);
 
+      const kind = h('select', {}, ...ROOM_KINDS.map((k) => h('option', { selected: room.kind === k }, k)));
+      kind.addEventListener('change', () => { room.kind = kind.value; save(room); });
+      const areaOut = h('b', {}, `${fmt(roomArea(room))} m²`);
+      const saveArea = async (r) => { await save(r); areaOut.textContent = `${fmt(roomArea(r))} m²`; };
       const parts = [
-        h('div', { class: 'row space' }, h('h3', {}, 'Cômodo'), h('button', { class: 'icon-btn', onclick: () => select(null) }, '✕')),
+        h('div', { class: 'props-head' }, h('b', {}, 'Propriedades do cômodo'), h('button', { class: 'icon-btn', title: 'Fechar', onclick: () => select(null) }, '✕')),
         h('label', { class: 'field' }, h('span', {}, 'Nome'), name),
-        h('div', { class: 'segs' }, shapeBtn('rect', 'Retângulo'), shapeBtn('poly', 'Paredes')),
+        h('label', { class: 'field' }, h('span', {}, 'Tipo'), kind),
+        h('div', { class: 'field' }, h('span', {}, 'Forma'), h('div', { class: 'segs' }, shapeBtn('rect', 'Retângulo'), shapeBtn('poly', 'Parede por parede'))),
       ];
 
       if ((room.shape || 'rect') === 'rect') {
         parts.push(
-          measureField({ label: 'Largura', value: room.width, onChange: (n) => { room.width = n; save(room); } }),
-          measureField({ label: 'Comprimento', value: room.length, onChange: (n) => { room.length = n; save(room); } }),
+          measureField({ label: 'Largura', value: room.width, onChange: (n) => { room.width = n; saveArea(room); } }),
+          measureField({ label: 'Comprimento', value: room.length, onChange: (n) => { room.length = n; saveArea(room); } }),
           h('button', { class: 'btn block', onclick: () => { room.rot = room.rot === 90 ? 0 : 90; save(room); } }, '↻ Girar 90°')
         );
       } else {
         parts.push(wallEditor(room));
       }
-      parts.push(h('p', { class: 'muted' }, `Área: ${fmt(roomArea(room))} m²`));
+      parts.push(
+        h('div', { class: 'field' }, h('span', {}, 'Pé-direito'), heightEditor(room, () => save(room), ctx)),
+        h('p', {}, 'Área: ', areaOut),
+        h('button', {
+          class: 'btn danger block',
+          onclick: async () => {
+            if (!(await confirmDialog(`Excluir “${room.name || room.kind}”?`))) return;
+            await db.del('rooms', room.id);
+            rooms.splice(rooms.indexOf(room), 1);
+            select(null);
+          },
+        }, 'Excluir cômodo')
+      );
       side.replaceChildren(...parts);
     }
 
@@ -364,7 +376,9 @@ export default {
         order: rooms.length, shape, x: rooms.length ? b.maxX + 0.5 : 0, y: rooms.length ? b.minY : 0, placed: true,
         width: shape === 'rect' ? 3 : null, length: shape === 'rect' ? 3 : null,
         walls: shape === 'poly' ? [{ len: null, dir: 0 }] : [],
+        heights: newRoomHeights(property),
       };
+      room.height = room.heights[0];
       await db.put('rooms', room);
       rooms.push(room);
       fit();
@@ -373,13 +387,25 @@ export default {
     }
 
     body.replaceChildren(
-      h('div', { class: 'plan-layout' },
-        h('div', { class: 'plan-main' },
-          wrap,
-          h('div', { class: 'plan-tools' },
-            h('button', { class: 'btn', onclick: () => zoom(1.25) }, '+'),
-            h('button', { class: 'btn', onclick: () => zoom(0.8) }, '−'),
-            h('button', { class: 'btn', onclick: fit }, 'Ajustar'))),
+      h('div', { class: 'plan-stage' },
+        wrap,
+        h('div', { class: 'plan-add' },
+          h('button', { class: 'btn primary big', onclick: () => addRoom('rect') }, '+ Cômodo'),
+          h('button', { class: 'btn', onclick: () => addRoom('poly') }, '+ Parede por parede')),
+        h('div', { class: 'plan-tools' },
+          h('button', { class: 'btn', onclick: () => zoom(1.25) }, '+'),
+          h('button', { class: 'btn', onclick: () => zoom(0.8) }, '−'),
+          h('button', { class: 'btn', onclick: fit }, 'Ajustar'),
+          h('button', {
+            class: 'btn',
+            onclick: (e) => {
+              const stage = e.currentTarget.closest('.plan-stage');
+              const full = stage.classList.toggle('full');
+              e.currentTarget.textContent = full ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
+              requestAnimationFrame(fit);
+            },
+          }, '⛶ Tela cheia')),
+        hint,
         side)
     );
     select(null);

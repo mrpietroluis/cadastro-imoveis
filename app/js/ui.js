@@ -143,7 +143,9 @@ export function deliverMeasure(meters) {
   // Se o campo foi redesenhado pelo onChange, quem redesenhou decide o próximo alvo.
   if (!field.isConnected) return true;
   if (getSettings().autoAdvance && field.classList.contains('mfield')) {
-    const all = [...document.querySelectorAll('.mfield')].filter((f) => f.offsetParent !== null);
+    // Avança só dentro do mesmo cômodo/painel e só para campos visíveis.
+    const scope = field.closest('.plan-props, .room-card') || document;
+    const all = [...scope.querySelectorAll('.mfield')].filter((f) => f.getClientRects().length && !f.closest('details:not([open])'));
     const next = all[all.indexOf(field) + 1];
     arm(next || null);
   }

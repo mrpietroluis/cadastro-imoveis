@@ -72,6 +72,16 @@ export function roomPerimeter(room) {
   return s;
 }
 
+// Pés-direitos do cômodo (pode ter mais de um: forro inclinado, mezanino, rebaixo…).
+export function roomHeights(room) {
+  const list = (room.heights || (room.height ? [room.height] : [])).filter((x) => x > 0);
+  return list;
+}
+
+export function heightsText(room, fmtFn) {
+  return roomHeights(room).map((x) => fmtFn(x)).join(' / ');
+}
+
 export function wallArea(room) {
   return room.height ? roomPerimeter(room) * room.height : 0;
 }

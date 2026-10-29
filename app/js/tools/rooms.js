@@ -1,7 +1,45 @@
 // Ferramenta: cômodos com medidas da trena, área, perímetro e área de paredes.
 import { uid } from '../db.js';
 import { h, fmt, measureField, arm, confirmDialog } from '../ui.js';
-import { ROOM_KINDS, roomArea, roomPerimeter, wallArea, isPoly } from '../geometry.js';
+import { ROOM_KINDS, roomArea, roomPerimeter, wallArea, isPoly, heightsText } from '../geometry.js';
+
+// Pés-direitos de um cômodo: um ou mais. O primeiro medido no imóvel vira o padrão dos próximos cômodos.
+export function heightEditor(room, onSave, ctx) {
+  room.heights ||= room.height ? [room.height] : [null];
+  const box = h('div', { class: 'heights' });
+  const sync = () => (room.height = room.heights.find((x) => x > 0) ?? null);
+  const draw = () => {
+    box.replaceChildren(
+      ...room.heights.map((v, i) => h('div', { class: 'height-row' },
+        measureField({
+          label: room.heights.length > 1 ? `Pé-direito ${i + 1}` : 'Pé-direito',
+          value: v,
+          onChange: async (n) => {
+            room.heights[i] = n;
+            sync();
+            if (n > 0 && ctx.property.defaultHeight == null) await ctx.saveProperty({ defaultHeight: n });
+            onSave();
+          },
+        }),
+        i > 0 ? h('button', { type: 'button', class: 'icon-btn', title: 'Remover', onclick: () => { room.heights.splice(i, 1); sync(); onSave(); draw(); } }, '✕') : null)),
+      h('button', {
+        type: 'button',
+        class: 'btn link-btn',
+        onclick: () => {
+          room.heights.push(null);
+          draw();
+          const fs = box.querySelectorAll('.mfield');
+          arm(fs[fs.length - 1]);
+        },
+      }, '+ outro pé-direito'));
+  };
+  draw();
+  return box;
+}
+
+export function newRoomHeights(property) {
+  return property.defaultHeight > 0 ? [property.defaultHeight] : [null];
+}
 
 export async function loadRooms(db, propertyId) {
   return (await db.byProperty('rooms', propertyId)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -72,7 +110,7 @@ export default {
             measureField({ label: 'Largura', value: room.width, onChange: set('width') }),
             measureField({ label: 'Comprimento', value: room.length, onChange: set('length') }),
           ],
-          measureField({ label: 'Pé-direito', value: room.height, onChange: set('height') })),
+          heightEditor(room, async () => { await save(room); drawResults(); }, ctx)),
         results,
         notes);
       drawResults();
@@ -84,8 +122,9 @@ export default {
       const count = rooms.filter((r) => r.kind === kindName).length + 1;
       const room = await save({
         id: uid(), propertyId: property.id, kind: kindName, name: `${kindName} ${count}`,
-        order: rooms.length, shape: 'rect', x: 0, y: 0,
+        order: rooms.length, shape: 'rect', x: 0, y: 0, heights: newRoomHeights(property),
       });
+      room.height = room.heights[0];
       rooms.push(room);
       const el = card(room);
       list.append(el);
@@ -108,7 +147,7 @@ export default {
     if (!rooms.length) return [];
     const rows = rooms.map((r) => [
       r.name || r.kind, r.kind,
-      isPoly(r) ? 'irregular' : fmt(r.width), isPoly(r) ? '' : fmt(r.length), fmt(r.height),
+      isPoly(r) ? 'irregular' : fmt(r.width), isPoly(r) ? '' : fmt(r.length), heightsText(r, (x) => fmt(x)),
       fmt(roomArea(r)), fmt(roomPerimeter(r)), r.height ? fmt(wallArea(r)) : '',
       r.notes || '',
     ]);
