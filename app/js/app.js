@@ -5,7 +5,7 @@ import { TOOLS } from './tools/index.js';
 import { roomArea } from './geometry.js';
 import { restoreButton } from './tools/export.js';
 
-export const APP_VERSION = '1.4.0'; // mantenha igual ao VERSION do sw.js
+export const APP_VERSION = '1.5.0'; // mantenha igual ao VERSION do sw.js
 const view = document.getElementById('view');
 let currentPropertyId = null;
 const history = []; // medidas recentes desta sessão
@@ -342,7 +342,7 @@ async function renderConfig() {
         },
       }, 'Proteger armazenamento'),
       h('div', { class: 'row' }, ...restoreButton('Restaurar backup (.json)', () => (location.hash = '#/')))),
-    h('p', { class: 'muted small' }, `Cadastro de Imóveis · versão ${APP_VERSION} · dados salvos só neste aparelho.`)
+    h('p', { class: 'muted small' }, `Cota Zero · cadastro · versão ${APP_VERSION} · dados salvos só neste aparelho.`)
   );
 }
 
@@ -351,7 +351,7 @@ function companyPanel() {
   const fields = [
     ['empresa', 'Empresa', 'Nome que sai no carimbo das pranchas'],
     ['responsavel', 'Responsável técnico', 'Nome completo'],
-    ['registro', 'Registro profissional', 'Ex.: CAU A12345-6'],
+    ['registro', 'Registro profissional', 'Ex.: CRT-BA 00000000000'],
     ['contato', 'Contato', 'Telefone / e-mail'],
   ];
   return h('section', { class: 'panel' },

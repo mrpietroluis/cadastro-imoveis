@@ -1,17 +1,29 @@
 {
-  "name": "Cadastro de Imóveis",
-  "short_name": "Cadastro",
-  "description": "Cadastro imobiliário com trena Bosch GLM 50 C via Bluetooth.",
+  "name": "Cota Zero · Cadastro",
+  "short_name": "Cota Zero",
+  "description": "Levantamento e cadastro imobiliário: planta do existente com a trena laser.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f4f6f9",
-  "theme_color": "#0f172a",
+  "background_color": "#F1EEE8",
+  "theme_color": "#1D2228",
   "lang": "pt-BR",
   "icons": [
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
-    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "icons/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

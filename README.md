@@ -1,4 +1,6 @@
-# Cadastro de Imóveis
+# Cota Zero · Cadastro
+
+App de levantamento e cadastro imobiliário da **Cota Zero** (identidade em `01 Identidade`). Os desenhos seguem a ABNT NBR 6492:2021 — resumo das regras em [NORMA.md](NORMA.md).
 
 App pessoal para iPad (web app) que recebe medidas da trena **Bosch GLM 50 C** por Bluetooth.
 A pesquisa que embasou o projeto está em [PESQUISA.md](PESQUISA.md).
