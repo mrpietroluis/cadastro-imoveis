@@ -13,7 +13,7 @@ Para publicar uma atualização: `git subtree split --prefix app -b gh-pages` e 
 
 - **Dados**: identificação, tipo, endereço, inscrição/matrícula, proprietário, área do terreno, data da vistoria, observações.
 - **Cômodos**: largura, comprimento e pé‑direito pela trena; área, perímetro e área de paredes calculados.
-- **Croqui**: arraste os cômodos para montar a planta (eles grudam nas paredes vizinhas) ou desenhe cômodos irregulares parede por parede.
+- **Croqui**: arraste os cômodos para montar a planta (encaixam deixando a espessura da parede). Toque no cômodo para ver os cantos: arraste-os, crie cantos no “+”, meça paredes e diagonais (o app calcula a forma real). Paredes soltas, meia parede, portas, janelas, Borracha (apaga só o trecho entre dois encontros) e encaixes como no AutoCAD (extremidade, interseção, ponto médio, perpendicular, próximo).
 - **Fotos**: fotos ligadas aos cômodos com cotas (a medida da trena entra na cota), caneta e textos.
 - **Exportar**: ficha em PDF, planilha CSV (Excel) e backup/restauração em `.json`.
 

@@ -11,7 +11,9 @@
 //   property.plan.walls:      [{ id, x1, y1, x2, y2, kind: 'full' | 'half', h, t }]   paredes soltas
 //   property.plan.openings:   [{ id, host: { t: 'room', id, edge } | { t: 'wall', id }, pos, width, kind: 'door' | 'window',
 //                                type, height, sill, flipHinge, flipSide }]           pos = centro, em m do início da parede
-// No cômodo: room.hiddenEdges = [paredes que não existem] (vão aberto) e room.edgeT = { índice: espessura }.
+// No cômodo: room.edgeT = { índice: espessura }, room.erased = { índice: [[t0, t1], …] } (trechos apagados
+// com a borracha, em metros ao longo da parede) e room.hiddenEdges (versões antigas: parede inteira apagada).
+// Na parede solta: w.erased = [[t0, t1], …] e w.align = 'center' | 'left' | 'right' (lado da espessura).
 import { roomPoints } from './geometry.js';
 
 export const DOOR_TYPES = ['De abrir', 'De correr', 'Camarão', 'Pivotante', 'Vão livre'];
@@ -73,7 +75,7 @@ export function segments(rooms, plan) {
       const [o0, o1] = sign > 0 ? [-t, 0] : [0, t];
       segs.push({
         id: `${r.id}:${i}`, host: { t: 'room', id: r.id, edge: i }, room: r, x1, y1, x2, y2,
-        kind: hidden.has(i) ? 'hidden' : 'full', t, o0, o1, u: dirs[i], n: [-dirs[i][1], dirs[i][0]],
+        kind: hidden.has(i) ? 'hidden' : 'full', t, o0, o1, u: dirs[i], n: [-dirs[i][1], dirs[i][0]], erased: r.erased?.[i] || [],
         ext0: convex(i) ? t : 0, ext1: convex((i + 1) % pts.length) ? t : 0, caps: false,
       });
     });
@@ -85,7 +87,8 @@ export function segments(rooms, plan) {
     const t = w.t > 0 ? w.t : half ? HALF_T : T;
     segs.push({
       id: w.id, host: { t: 'wall', id: w.id }, wall: w, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2,
-      kind: half ? 'half' : 'full', h: w.h, t, o0: -t / 2, o1: t / 2, u, n: [-u[1], u[0]], ext0: 0, ext1: 0, caps: true,
+      kind: half ? 'half' : 'full', h: w.h, t, ...(w.align === 'left' ? { o0: 0, o1: t } : w.align === 'right' ? { o0: -t, o1: 0 } : { o0: -t / 2, o1: t / 2 }),
+      u, n: [-u[1], u[0]], ext0: 0, ext1: 0, caps: true, erased: w.erased || [],
     });
   }
   return segs;
@@ -221,6 +224,16 @@ export function renderWalls(ad, rooms, plan, { editor = false, labels = true, no
     const off = (p) => [p[0] + s.n[0] * mid, p[1] + s.n[1] * mid];
     cutters.push({ seg: s, u: s.u, a: off([s.x1, s.y1]), b: off([s.x2, s.y2]), c: off([(s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2]), T: (s.o1 - s.o0) / 2, t0: 0, t1: L });
   }
+  for (const s of segs) {
+    for (const [t0, t1] of s.erased || []) {
+      const mid = (s.o0 + s.o1) / 2;
+      const at = (t) => [s.x1 + s.u[0] * t + s.n[0] * mid, s.y1 + s.u[1] * t + s.n[1] * mid];
+      cutters.push({ seg: s, u: s.u, a: at(t0), b: at(t1), c: at((t0 + t1) / 2), T: (s.o1 - s.o0) / 2, t0, t1, erased: true });
+    }
+  }
+  if (editor) {
+    for (const c of cutters) if (c.erased) ad.line(c.a[0], c.a[1], c.b[0], c.b[1], 'hidden');
+  }
   const ps = [];
   for (const s of segs) {
     if (s.kind === 'hidden') {
@@ -303,6 +316,119 @@ export function distToSeg(p, s) {
   t = Math.max(0, Math.min(1, t));
   const q = [s.x1 + t * (s.x2 - s.x1), s.y1 + t * (s.y2 - s.y1)];
   return { d: Math.hypot(p[0] - q[0], p[1] - q[1]), t: t * Math.sqrt(L2), q };
+}
+
+// ---------- divisão das paredes nos encontros (para a borracha) ----------
+// Pontos ao longo de s (em metros) onde outra parede encosta ou cruza: a parede se divide ali.
+export function junctions(s, segs) {
+  const L = segLen(s);
+  const ts = new Set([-s.ext0, 0, L, L + s.ext1].map((t) => +t.toFixed(3)));
+  const addPoint = (p, reach) => {
+    const dx = p[0] - s.x1;
+    const dy = p[1] - s.y1;
+    const t = dx * s.u[0] + dy * s.u[1];
+    const d = dx * s.n[0] + dy * s.n[1];
+    if (d < s.o0 - reach || d > s.o1 + reach) return;
+    if (t <= -s.ext0 + 0.005 || t >= L + s.ext1 - 0.005) return;
+    ts.add(+t.toFixed(3));
+  };
+  for (const o of segs) {
+    if (o === s || o.kind === 'hidden') continue;
+    const parallel = Math.abs(s.u[0] * o.u[1] - s.u[1] * o.u[0]) < 0.02;
+    const reach = (o.o1 - o.o0) + 0.03;
+    for (const pc of pieces(o, [])) for (const p of pc.poly) addPoint(p, parallel ? 0.03 : reach);
+    addPoint([o.x1, o.y1], reach);
+    addPoint([o.x2, o.y2], reach);
+  }
+  return [...ts].sort((a, b) => a - b);
+}
+
+// Trecho da parede (entre dois encontros) que contém a posição t.
+export function pieceAt(s, t, segs) {
+  const js = junctions(s, segs);
+  let lo = js[0];
+  let hi = js[js.length - 1];
+  for (const j of js) {
+    if (j <= t + 1e-6) lo = j;
+    if (j >= t - 1e-6) { hi = j; break; }
+  }
+  return [Math.max(lo, 0), Math.min(hi, segLen(s))];
+}
+
+// ---------- encaixes (object snap) no estilo do AutoCAD ----------
+// Tipos, em ordem de prioridade: extremidade, interseção, ponto médio, perpendicular, próximo.
+export const SNAP_KINDS = {
+  end: { prio: 1, label: 'Extremidade' },
+  int: { prio: 2, label: 'Interseção' },
+  mid: { prio: 3, label: 'Ponto médio' },
+  perp: { prio: 4, label: 'Perpendicular' },
+  near: { prio: 5, label: 'Próximo' },
+};
+
+// Linhas de referência de cada parede: faces e eixo (para paredes soltas).
+export function snapLines(segs) {
+  const lines = [];
+  for (const s of segs) {
+    if (s.kind === 'hidden') continue;
+    const L = segLen(s);
+    const line = (o, a, b) => {
+      const p = [s.x1 + s.n[0] * o - s.u[0] * a, s.y1 + s.n[1] * o - s.u[1] * a];
+      const q = [s.x1 + s.n[0] * o + s.u[0] * (L + b), s.y1 + s.n[1] * o + s.u[1] * (L + b)];
+      lines.push({ id: s.id, p, q });
+    };
+    const inner = s.host.t === 'room' ? (s.o0 === 0 ? s.o0 : s.o1) : null;
+    for (const o of [s.o0, s.o1]) line(o, o === inner ? 0 : s.ext0, o === inner ? 0 : s.ext1);
+    if (s.host.t === 'wall') line((s.o0 + s.o1) / 2, 0, 0);
+  }
+  return lines;
+}
+
+// Pontos fixos de encaixe: extremidades, pontos médios e interseções entre linhas de paredes.
+export function snapPointsV2(segs, exceptId) {
+  const lines = snapLines(segs).filter((l) => l.id !== exceptId);
+  const pts = [];
+  for (const l of lines) {
+    pts.push({ p: l.p, k: 'end' }, { p: l.q, k: 'end' }, { p: [(l.p[0] + l.q[0]) / 2, (l.p[1] + l.q[1]) / 2], k: 'mid' });
+  }
+  for (let i = 0; i < lines.length; i++) {
+    for (let j = i + 1; j < lines.length; j++) {
+      const a = lines[i];
+      const b = lines[j];
+      if (a.id === b.id) continue;
+      const r = [a.q[0] - a.p[0], a.q[1] - a.p[1]];
+      const sv = [b.q[0] - b.p[0], b.q[1] - b.p[1]];
+      const den = r[0] * sv[1] - r[1] * sv[0];
+      if (Math.abs(den) < 1e-9) continue;
+      const qp = [b.p[0] - a.p[0], b.p[1] - a.p[1]];
+      const t = (qp[0] * sv[1] - qp[1] * sv[0]) / den;
+      const u = (qp[0] * r[1] - qp[1] * r[0]) / den;
+      if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) continue;
+      pts.push({ p: [a.p[0] + r[0] * t, a.p[1] + r[1] * t], k: 'int' });
+    }
+  }
+  return pts;
+}
+
+// Melhor encaixe perto de "p" (tolerância em metros). "from" = ponto inicial, para a perpendicular.
+export function findSnap(p, segs, tol, { exceptId, from } = {}) {
+  const cands = snapPointsV2(segs, exceptId);
+  for (const l of snapLines(segs).filter((x) => x.id !== exceptId)) {
+    const seg = { x1: l.p[0], y1: l.p[1], x2: l.q[0], y2: l.q[1] };
+    const near = distToSeg(p, seg);
+    if (near.q) cands.push({ p: near.q, k: 'near' });
+    if (from) {
+      const f = distToSeg(from, seg);
+      if (f.q && f.d > 0.05) cands.push({ p: f.q, k: 'perp' });
+    }
+  }
+  let best = null;
+  for (const c of cands) {
+    const d = Math.hypot(c.p[0] - p[0], c.p[1] - p[1]);
+    if (d > tol) continue;
+    const pr = SNAP_KINDS[c.k].prio;
+    if (!best || pr < best.pr || (pr === best.pr && d < best.d)) best = { ...c, d, pr };
+  }
+  return best;
 }
 
 // Pontos de encaixe: cantos (endpoint) e meios (midpoint) das paredes, nas duas faces.

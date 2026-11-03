@@ -34,6 +34,17 @@ export async function brandLogo() {
   return logoData;
 }
 
+// Cômodo retangular? (cota só largura e comprimento; nos demais, cota todas as paredes)
+function isRectRoom(r, pts) {
+  if (r.shape === 'rect' || !r.shape) return true;
+  if (pts.length !== 4) return false;
+  return pts.every((a, i) => {
+    const b = pts[(i + 1) % 4];
+    const c = pts[(i + 2) % 4];
+    return Math.abs((b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1])) < 1e-3;
+  });
+}
+
 export const ESCALAS = [20, 25, 50, 100, 200, 250, 500, 1000, 2000]; // usuais (A.3.1) adequadas a plantas
 const n2 = (v) => v.toFixed(2).replace('.', ',');
 
@@ -213,7 +224,7 @@ export async function buildPrancha({ property, rooms, def, company }) {
     for (const r of rooms) {
       const pts = worldPoints(r);
       if (pts.length < 3) continue;
-      const rect = r.shape !== 'poly' || pts.length === 4;
+      const rect = isRectRoom(r, pts);
       pts.forEach(([x1, y1], i) => {
         if (rect && i > 1) return;
         const [x2, y2] = pts[(i + 1) % pts.length];
@@ -465,7 +476,7 @@ export function buildDXF(rooms, property = {}, escala = 50) {
   for (const r of rooms) {
     const pts = worldPoints(r);
     if (pts.length < 3) continue;
-    const rect = r.shape !== 'poly' || pts.length === 4;
+    const rect = isRectRoom(r, pts);
     pts.forEach(([x1, y1], i) => {
       if (rect && i > 1) return;
       const [x2, y2] = pts[(i + 1) % pts.length];
