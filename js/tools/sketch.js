@@ -1,31 +1,26 @@
-// Ferramenta: planta baixa (croqui). Cômodos arrastáveis + paredes soltas, meias paredes, portas e janelas.
-// Modos: Selecionar (arrastar/editar), Parede (desenhar parede solta com encaixe em cantos e meios),
-// Porta e Janela (tocar numa parede para inserir). Toque numa parede de cômodo para apagá-la (vão aberto).
+// Ferramenta: planta baixa (croqui).
+// Modos: Selecionar (tocar/arrastar), Parede (desenhar parede solta), Porta e Janela (tocar numa parede),
+// Borracha (apaga só o trecho da parede entre dois encontros; tocar no trecho apagado devolve a parede).
+// Encaixes no estilo do AutoCAD: extremidade, interseção, ponto médio, perpendicular e próximo (liga/desliga).
+// Cômodo: nasce retângulo; tocar nele mostra os cantos (arrastar muda a forma) e um "+" no meio de cada
+// parede (cria um canto). Lados e diagonais medidos calculam a forma real (triangulação).
 import { uid } from '../db.js';
 import { h, fmt, measureField, arm, confirmDialog } from '../ui.js';
-import { roomArea, closingGap, bounds, DIR_ARROWS, DIRS, ROOM_KINDS } from '../geometry.js';
+import { roomArea, bounds, DIR_ARROWS, DIRS, ROOM_KINDS, toFree, solveFree, sideLen, diagLen, closingError } from '../geometry.js';
 import { loadRooms, heightEditor, newRoomHeights } from './rooms.js';
 import {
-  getPlan, worldPoints, segments, segLen, openingGeom, renderWalls, distToSeg, snapPoints, planExtents,
-  DOOR_TYPES, WINDOW_TYPES, openingLabels, DEFAULT_T, HALF_T,
+  getPlan, worldPoints, segments, segLen, openingGeom, renderWalls, distToSeg, planExtents, pieceAt, findSnap,
+  SNAP_KINDS, DOOR_TYPES, WINDOW_TYPES, openingLabels, HALF_T,
 } from '../plan.js';
 
-const SNAP = 0.15; // metros: distância para "grudar" na parede de outro cômodo
+const SNAP = 0.15; // metros: distância mínima para encaixar um cômodo no vizinho
 const GRID = 0.05;
 const round = (n) => Math.round(n / GRID) * GRID;
+const AZUL = '#1E4FA0';
 
 function contentBounds(rooms, plan) {
   const ext = plan ? planExtents(rooms, plan) : null;
-  if (ext) return ext;
-  const b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  const add = (x, y) => {
-    b.minX = Math.min(b.minX, x); b.minY = Math.min(b.minY, y);
-    b.maxX = Math.max(b.maxX, x); b.maxY = Math.max(b.maxY, y);
-  };
-  for (const r of rooms) for (const [x, y] of worldPoints(r)) add(x, y);
-  for (const w of plan?.walls || []) { add(w.x1, w.y1); add(w.x2, w.y2); }
-  if (!Number.isFinite(b.minX)) return { minX: 0, minY: 0, maxX: 10, maxY: 8 };
-  return b;
+  return ext || { minX: 0, minY: 0, maxX: 10, maxY: 8 };
 }
 
 function fitView(rooms, plan, w, h, pad = 60) {
@@ -34,6 +29,20 @@ function fitView(rooms, plan, w, h, pad = 60) {
   const bh = Math.max(b.maxY - b.minY, 1);
   const scale = Math.min((w - pad * 2) / bw, (h - pad * 2) / bh, 120);
   return { scale, ox: (w - bw * scale) / 2 - b.minX * scale, oy: (h - bh * scale) / 2 - b.minY * scale };
+}
+
+// Cômodo retangular (4 cantos em ângulo reto)?
+function isRectShape(r, pts) {
+  if (r.shape === 'rect' || !r.shape) return true;
+  if (pts.length !== 4) return false;
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % 4];
+    const c = pts[(i + 2) % 4];
+    const dot = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]);
+    if (Math.abs(dot) > 1e-3) return false;
+  }
+  return true;
 }
 
 // Adaptador de desenho para o canvas da tela.
@@ -66,7 +75,7 @@ function canvasAdapter(g, v, print) {
     text(x, y, str, { size, angle } = {}) {
       g.save();
       g.fillStyle = '#334155';
-      g.font = `600 ${size === 'small' ? 11 : 12}px "IBM Plex Mono", ui-monospace, monospace`;
+      g.font = `500 ${size === 'small' ? 11 : 12}px "IBM Plex Mono", ui-monospace, monospace`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
       g.translate(X(x), Y(y));
       if (angle) g.rotate(-Math.PI / 2);
@@ -76,7 +85,27 @@ function canvasAdapter(g, v, print) {
   };
 }
 
-export function drawPlan(g, rooms, v, { selection, width, height, print, plan = { walls: [], openings: [] }, preview } = {}) {
+// Símbolos de encaixe (como no AutoCAD).
+function drawSnapMarker(g, x, y, kind) {
+  g.save();
+  g.strokeStyle = AZUL;
+  g.lineWidth = 2;
+  g.beginPath();
+  if (kind === 'end') g.rect(x - 7, y - 7, 14, 14);
+  else if (kind === 'mid') { g.moveTo(x, y - 8); g.lineTo(x + 8, y + 6); g.lineTo(x - 8, y + 6); g.closePath(); }
+  else if (kind === 'int') { g.moveTo(x - 7, y - 7); g.lineTo(x + 7, y + 7); g.moveTo(x + 7, y - 7); g.lineTo(x - 7, y + 7); }
+  else if (kind === 'perp') { g.moveTo(x - 7, y - 7); g.lineTo(x - 7, y + 7); g.lineTo(x + 7, y + 7); g.moveTo(x - 7, y); g.lineTo(x, y); g.lineTo(x, y + 7); }
+  else { g.moveTo(x - 7, y - 7); g.lineTo(x + 7, y - 7); g.lineTo(x - 7, y + 7); g.lineTo(x + 7, y + 7); g.closePath(); }
+  g.stroke();
+  g.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+  g.fillStyle = AZUL;
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  g.fillText(SNAP_KINDS[kind]?.label || '', x + 12, y - 12);
+  g.restore();
+}
+
+export function drawPlan(g, rooms, v, { selection, width, height, print, plan = { walls: [], openings: [] }, preview, showHandles } = {}) {
   g.save();
   g.fillStyle = '#fff';
   g.fillRect(0, 0, width, height);
@@ -89,18 +118,16 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
     for (let x = v.ox % step; x < width; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); }
     for (let y = v.oy % step; y < height; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(width, y); g.stroke(); }
   }
-  // preenchimento dos cômodos
+  const selRoom = selection?.room && (selection.t === 'room' || selection.t === 'vertex') ? selection.room : null;
   for (const r of rooms) {
     const pts = worldPoints(r);
     if (pts.length < 3) continue;
-    const sel = selection?.t === 'room' && selection.room === r;
     g.beginPath();
     pts.forEach(([x, y], i) => (i ? g.lineTo(tx(x), ty(y)) : g.moveTo(tx(x), ty(y))));
     g.closePath();
-    g.fillStyle = sel ? 'rgba(30,79,160,0.10)' : 'rgba(30,79,160,0.035)';
+    g.fillStyle = r === selRoom ? 'rgba(30,79,160,0.10)' : 'rgba(30,79,160,0.035)';
     g.fill();
   }
-  // paredes, meias paredes e esquadrias
   renderWalls(canvasAdapter(g, v, print), rooms, plan, { editor: !print });
 
   // cotas internas e identificação
@@ -111,7 +138,7 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
     g.fillStyle = '#475569';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    const rect = r.shape !== 'poly' || pts.length === 4;
+    const rect = isRectShape(r, pts);
     pts.forEach(([x1, y1], i) => {
       if (rect && i > 1) return;
       const [x2, y2] = pts[(i + 1) % pts.length];
@@ -119,9 +146,13 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
       if (len * v.scale < 30) return;
       const nx = (y2 - y1) / len;
       const ny = -(x2 - x1) / len;
+      const s = Math.sign((pts.length && (worldPoints(r).reduce((a, p, j, arr) => a + p[0] * arr[(j + 1) % arr.length][1] - arr[(j + 1) % arr.length][0] * p[1], 0))) || 1);
       g.save();
-      g.translate(tx((x1 + x2) / 2) - nx * 12, ty((y1 + y2) / 2) - ny * 12);
-      if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) g.rotate(-Math.PI / 2);
+      g.translate(tx((x1 + x2) / 2) - nx * 12 * s, ty((y1 + y2) / 2) - ny * 12 * s);
+      let ang = Math.atan2(y2 - y1, x2 - x1);
+      if (ang > Math.PI / 2) ang -= Math.PI;
+      if (ang < -Math.PI / 2) ang += Math.PI;
+      g.rotate(ang);
       g.fillText(fmt(len), 0, 0);
       g.restore();
     });
@@ -138,13 +169,13 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
 
   // destaque da seleção
   if (!print && selection) {
-    g.strokeStyle = '#1E4FA0';
+    g.strokeStyle = AZUL;
     g.lineWidth = 5;
     g.lineCap = 'round';
     const segs = segments(rooms, plan);
     const hl = (x1, y1, x2, y2) => { g.beginPath(); g.moveTo(tx(x1), ty(y1)); g.lineTo(tx(x2), ty(y2)); g.stroke(); };
-    if (selection.t === 'room') {
-      const pts = worldPoints(selection.room);
+    if (selRoom) {
+      const pts = worldPoints(selRoom);
       g.lineWidth = 2.5;
       g.beginPath();
       pts.forEach(([x, y], i) => (i ? g.lineTo(tx(x), ty(y)) : g.moveTo(tx(x), ty(y))));
@@ -158,27 +189,45 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
       if (og) { g.lineWidth = 7; g.strokeStyle = 'rgba(30,79,160,.5)'; hl(og.a[0], og.a[1], og.b[0], og.b[1]); }
     }
   }
+
+  // cantos numerados (arrastáveis) e "+" no meio das paredes do cômodo selecionado
+  if (!print && selRoom && showHandles) {
+    const pts = worldPoints(selRoom);
+    pts.forEach(([x, y], i) => {
+      const [x2, y2] = pts[(i + 1) % pts.length];
+      const mx = tx((x + x2) / 2);
+      const my = ty((y + y2) / 2);
+      g.fillStyle = '#fff';
+      g.strokeStyle = AZUL;
+      g.lineWidth = 2;
+      g.beginPath(); g.rect(mx - 9, my - 9, 18, 18); g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(mx - 5, my); g.lineTo(mx + 5, my); g.moveTo(mx, my - 5); g.lineTo(mx, my + 5); g.stroke();
+    });
+    pts.forEach(([x, y], i) => {
+      const on = selection.t === 'vertex' && selection.i === i;
+      g.fillStyle = on ? '#141414' : AZUL;
+      g.beginPath(); g.arc(tx(x), ty(y), 11, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#F1EEE8';
+      g.font = '500 12px "IBM Plex Mono", ui-monospace, monospace';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(i + 1), tx(x), ty(y) + 0.5);
+    });
+  }
+
   // parede sendo desenhada + marcador de encaixe
   if (preview && !preview.hideLine) {
     g.setLineDash([8, 6]);
-    g.strokeStyle = '#1E4FA0';
+    g.strokeStyle = AZUL;
     g.lineWidth = 3;
     g.beginPath(); g.moveTo(tx(preview.x1), ty(preview.y1)); g.lineTo(tx(preview.x2), ty(preview.y2)); g.stroke();
     g.setLineDash([]);
     const L = Math.hypot(preview.x2 - preview.x1, preview.y2 - preview.y1);
-    g.fillStyle = '#1E4FA0';
+    g.fillStyle = AZUL;
     g.font = '500 13px "IBM Plex Mono", ui-monospace, monospace';
+    g.textAlign = 'center';
     g.fillText(`${fmt(L)} m`, tx((preview.x1 + preview.x2) / 2), ty((preview.y1 + preview.y2) / 2) - 14);
   }
-  if (preview?.snap) {
-    const [sx, sy] = preview.snap.p;
-    g.strokeStyle = '#1E4FA0';
-    g.lineWidth = 2;
-    g.beginPath();
-    if (preview.snap.k === 'mid') { g.moveTo(tx(sx), ty(sy) - 8); g.lineTo(tx(sx) + 8, ty(sy) + 6); g.lineTo(tx(sx) - 8, ty(sy) + 6); g.closePath(); }
-    else g.rect(tx(sx) - 7, ty(sy) - 7, 14, 14);
-    g.stroke();
-  }
+  if (preview?.snap) drawSnapMarker(g, tx(preview.snap.p[0]), ty(preview.snap.p[1]), preview.snap.k);
   g.restore();
 }
 
@@ -192,7 +241,7 @@ function pointInPoly([px, py], pts) {
   return inside;
 }
 
-// Ajusta (x, y) de um cômodo para alinhar bordas com outros cômodos próximos.
+// Ajusta (x, y) de um cômodo para encaixar no vizinho, deixando o espaço da parede entre eles.
 function snapRoom(room, rooms, x, y, gap = 0, tol = SNAP) {
   const b = bounds(room);
   const mine = { l: x + b.minX, r: x + b.maxX, t: y + b.minY, b: y + b.maxY };
@@ -215,16 +264,17 @@ function snapRoom(room, rooms, x, y, gap = 0, tol = SNAP) {
 }
 
 const HINTS = {
-  select: 'Toque num cômodo, parede, porta ou janela para ver as propriedades. Arraste para mover.',
-  wall: 'Arraste para desenhar a parede. Ela gruda em cantos (■) e meios (▲) de outras paredes.',
+  select: 'Toque num cômodo para ver os cantos (arraste para mudar a forma) e o + para criar um canto. Arraste o cômodo para encaixar.',
+  wall: 'Arraste para desenhar a parede. Ela encaixa em extremidades, meios, interseções e na perpendicular.',
   door: 'Toque numa parede para colocar a porta.',
   window: 'Toque numa parede para colocar a janela.',
+  erase: 'Toque no trecho de parede que não existe. Tocar no trecho apagado (tracejado) devolve a parede.',
 };
 
 export default {
   id: 'sketch',
   name: 'Croqui',
-  description: 'Planta baixa: cômodos arrastáveis, paredes soltas, meias paredes, portas e janelas, com encaixe automático.',
+  description: 'Planta baixa: cômodos com cantos e diagonais, paredes soltas, meias paredes, portas, janelas e borracha, com encaixes como no AutoCAD.',
 
   async render(body, ctx) {
     const { db, property } = ctx;
@@ -232,6 +282,7 @@ export default {
     const plan = getPlan(property);
     let selection = null;
     let mode = 'select';
+    let osnap = true;
     let v = null;
     let preview = null;
 
@@ -242,11 +293,16 @@ export default {
     const g = canvas.getContext('2d');
     const savePlan = () => ctx.saveProperty({ plan: { walls: plan.walls, openings: plan.openings } });
     const setSide = (...els) => side.replaceChildren(...els.filter(Boolean));
+    const save = async (room) => {
+      await db.put('rooms', room);
+      draw();
+    };
 
-    // Posições iniciais: cômodos sem posição vão lado a lado.
+    // Cômodos sem posição vão lado a lado; formas antigas "parede por parede" viram forma livre.
     let cursor = 0;
     for (const r of rooms) if (r.placed) cursor = Math.max(cursor, (r.x || 0) + bounds(r).maxX + 0.5);
     for (const r of rooms) {
+      if (r.shape === 'poly') { toFree(r); db.put('rooms', r); }
       if (r.placed) continue;
       r.x = cursor;
       r.y = 0;
@@ -268,12 +324,11 @@ export default {
     };
     const draw = () => {
       if (!v) return;
-      drawPlan(g, rooms, v, { selection, width: wrap.clientWidth, height: wrap.clientHeight, plan, preview });
+      drawPlan(g, rooms, v, { selection, width: wrap.clientWidth, height: wrap.clientHeight, plan, preview, showHandles: mode === 'select' });
     };
     const fit = () => {
       const [w, hh] = size();
-      // respiro em cima para a barra de botões não tapar o desenho
-      v = fitView(rooms, plan, w, hh - 56);
+      v = fitView(rooms, plan, w, hh - 56); // respiro em cima para a barra de botões
       v.oy += 56;
       draw();
     };
@@ -284,29 +339,40 @@ export default {
       draw();
     };
 
-    // ---------- encaixe ----------
+    // ---------- encaixe (object snap) ----------
     const tol = () => 16 / v.scale;
-    function snapPoint(p, exceptId) {
-      let best = null;
-      for (const sp of snapPoints(segments(rooms, plan), exceptId)) {
-        const d = Math.hypot(sp.p[0] - p[0], sp.p[1] - p[1]);
-        if (d < tol() && (!best || d < best.d)) best = { ...sp, d };
-      }
-      return best;
-    }
-    function snapEnd(start, p, exceptId) {
-      const sp = snapPoint(p, exceptId);
+    const snapAt = (p, opts = {}) => {
+      if (!osnap) return null;
+      const segs = segments(rooms, plan).filter((s) => !opts.skipRoom || s.host.id !== opts.skipRoom.id);
+      return findSnap(p, segs, tol(), opts);
+    };
+    // Ponto final de uma linha a partir de "start": encaixe; senão, ortogonal (±8°) e arredonda o comprimento.
+    function snapEnd(start, p, opts = {}) {
+      const sp = snapAt(p, { ...opts, from: start });
       if (sp) return { p: sp.p, snap: sp };
       let [dx, dy] = [p[0] - start[0], p[1] - start[1]];
       const ang = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
-      if (ang < 10 || ang > 170) dy = 0;
-      else if (Math.abs(ang - 90) < 10) dx = 0;
+      if (ang < 8 || ang > 172) dy = 0;
+      else if (Math.abs(ang - 90) < 8) dx = 0;
       const L = Math.hypot(dx, dy);
       if (L > 0) { const k = round(L) / L; dx *= k; dy *= k; }
       return { p: [start[0] + dx, start[1] + dy], snap: null };
     }
 
-    // ---------- seleção por toque ----------
+    // ---------- toque: o que está debaixo do dedo ----------
+    function handleAt(p) {
+      const room = selection?.room && (selection.t === 'room' || selection.t === 'vertex') ? selection.room : null;
+      if (!room || mode !== 'select') return null;
+      const pts = worldPoints(room);
+      const r = 16 / v.scale;
+      for (let i = 0; i < pts.length; i++) if (Math.hypot(pts[i][0] - p[0], pts[i][1] - p[1]) < r) return { t: 'vertex', room, i };
+      for (let i = 0; i < pts.length; i++) {
+        const q = pts[(i + 1) % pts.length];
+        const m = [(pts[i][0] + q[0]) / 2, (pts[i][1] + q[1]) / 2];
+        if (Math.hypot(m[0] - p[0], m[1] - p[1]) < r) return { t: 'addVertex', room, i };
+      }
+      return null;
+    }
     function hitTest(p) {
       const segs = segments(rooms, plan);
       const t = tol();
@@ -314,13 +380,138 @@ export default {
         const og = openingGeom(op, segs);
         if (og && distToSeg(p, { x1: og.a[0], y1: og.a[1], x2: og.b[0], y2: og.b[1] }).d < t) return { t: 'op', op };
       }
-      for (const w of [...plan.walls].reverse()) if (distToSeg(p, w).d < t) return { t: 'wall', wall: w };
       for (const s of segs) {
-        if (s.host.t !== 'room') continue;
-        if (distToSeg(p, s).d < t * 0.6) return { t: 'edge', room: s.room, i: s.host.edge };
+        if (s.host.t !== 'wall') continue;
+        if (distToSeg(p, s).d < t + (s.o1 - s.o0) / 2) return { t: 'wall', wall: s.wall };
+      }
+      for (const s of segs) {
+        if (s.host.t !== 'room' || s.kind === 'hidden') continue;
+        const mid = (s.o0 + s.o1) / 2;
+        const c = { x1: s.x1 + s.n[0] * mid, y1: s.y1 + s.n[1] * mid, x2: s.x2 + s.n[0] * mid, y2: s.y2 + s.n[1] * mid };
+        if (distToSeg(p, c).d < Math.max(t * 0.6, (s.o1 - s.o0) / 2)) return { t: 'edge', room: s.room, i: s.host.edge };
       }
       const r = [...rooms].reverse().find((x) => pointInPoly(p, worldPoints(x)));
       return r ? { t: 'room', room: r } : null;
+    }
+
+    // ---------- borracha ----------
+    function eraseAt(p) {
+      const segs = segments(rooms, plan);
+      const t = tol();
+      // 1º: tocou num trecho já apagado? devolve a parede
+      for (const s of segs) {
+        for (const iv of s.erased) {
+          const mid = (s.o0 + s.o1) / 2;
+          const a = [s.x1 + s.u[0] * iv[0] + s.n[0] * mid, s.y1 + s.u[1] * iv[0] + s.n[1] * mid];
+          const b = [s.x1 + s.u[0] * iv[1] + s.n[0] * mid, s.y1 + s.u[1] * iv[1] + s.n[1] * mid];
+          if (distToSeg(p, { x1: a[0], y1: a[1], x2: b[0], y2: b[1] }).d < Math.max(t, (s.o1 - s.o0) / 2 + 0.05)) {
+            const owner = s.host.t === 'room' ? s.room : s.wall;
+            if (s.host.t === 'room') owner.erased[s.host.edge] = owner.erased[s.host.edge].filter((x) => x !== iv);
+            else owner.erased = owner.erased.filter((x) => x !== iv);
+            return commitErase(s, 'Parede devolvida.');
+          }
+        }
+        if (s.kind === 'hidden' && distToSeg(p, s).d < t) {
+          s.room.hiddenEdges = (s.room.hiddenEdges || []).filter((x) => x !== s.host.edge);
+          return commitErase(s, 'Parede devolvida.');
+        }
+      }
+      // 2º: apaga o trecho entre os dois encontros mais próximos
+      let best = null;
+      for (const s of segs) {
+        if (s.kind === 'hidden') continue;
+        const mid = (s.o0 + s.o1) / 2;
+        const c = { x1: s.x1 + s.n[0] * mid, y1: s.y1 + s.n[1] * mid, x2: s.x2 + s.n[0] * mid, y2: s.y2 + s.n[1] * mid };
+        const r = distToSeg(p, c);
+        const lim = t + (s.o1 - s.o0) / 2;
+        if (r.d < lim && (!best || r.d < best.d)) best = { s, d: r.d, t: r.t };
+      }
+      if (!best) return ctx.toast('Toque em cima de uma parede.');
+      const { s } = best;
+      const [lo, hi] = pieceAt(s, best.t, segs);
+      if (hi - lo < 0.02) return;
+      if (s.host.t === 'room') {
+        s.room.erased = { ...(s.room.erased || {}) };
+        s.room.erased[s.host.edge] = [...(s.room.erased[s.host.edge] || []), [lo, hi]];
+      } else {
+        s.wall.erased = [...(s.wall.erased || []), [lo, hi]];
+        const covered = s.wall.erased.reduce((a, [x, y]) => a + (y - x), 0);
+        if (covered >= segLen(s) - 0.02) {
+          plan.walls = plan.walls.filter((w) => w !== s.wall);
+          plan.openings = plan.openings.filter((o) => !(o.host.t === 'wall' && o.host.id === s.wall.id));
+        }
+      }
+      // portas e janelas que ficavam nesse trecho saem junto
+      plan.openings = plan.openings.filter((o) => {
+        if (o.host.t !== s.host.t || o.host.id !== s.host.id || (s.host.t === 'room' && o.host.edge !== s.host.edge)) return true;
+        return o.pos < lo || o.pos > hi;
+      });
+      commitErase(s, `Trecho de ${fmt(hi - lo)} m apagado. Toque nele de novo para devolver.`);
+    }
+    async function commitErase(s, msg) {
+      if (s.host.t === 'room') await db.put('rooms', s.room);
+      await savePlan();
+      ctx.toast(msg);
+      draw();
+    }
+
+    // ---------- cantos do cômodo ----------
+    // Reorganiza o que está preso às paredes (portas, espessuras, trechos apagados) quando muda a contagem de cantos.
+    function remapEdges(room, fn) {
+      const remapObj = (obj) => {
+        if (!obj) return obj;
+        const out = {};
+        for (const [k, val] of Object.entries(obj)) for (const [nk, nv] of fn(Number(k), val)) out[nk] = nv;
+        return out;
+      };
+      room.edgeT = remapObj(room.edgeT);
+      room.erased = remapObj(room.erased);
+      for (const o of plan.openings) {
+        if (o.host.t !== 'room' || o.host.id !== room.id) continue;
+        const res = fn(o.host.edge, o.pos, true);
+        if (!res.length) continue;
+        [[o.host.edge, o.pos]] = res;
+      }
+      room.hiddenEdges = [];
+    }
+    function insertVertex(room, i) {
+      toFree(room);
+      const L = sideLen(room, i);
+      const p = room.pts[i];
+      const q = room.pts[(i + 1) % room.pts.length];
+      room.pts.splice(i + 1, 0, [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]);
+      room.sides = [...(room.sides || [])];
+      room.sides.splice(i, 1, null, null);
+      room.diags = {};
+      remapEdges(room, (k, val, isPos) => {
+        if (k < i) return [[k, val]];
+        if (k > i) return [[k + 1, val]];
+        if (isPos) return val > L / 2 ? [[i + 1, val - L / 2]] : [[i, val]];
+        if (Array.isArray(val)) return [[i, val.filter(([a]) => a < L / 2)], [i + 1, val.filter(([a]) => a >= L / 2).map(([a, b]) => [a - L / 2, b - L / 2])]];
+        return [[i, val], [i + 1, val]];
+      });
+      save(room);
+      savePlan();
+      select({ t: 'vertex', room, i: i + 1 });
+      ctx.toast(`Canto ${i + 2} criado. Arraste para dar a forma e meça as paredes.`);
+    }
+    function removeVertex(room, i) {
+      toFree(room);
+      const n = room.pts.length;
+      if (n <= 3) return ctx.toast('Um cômodo precisa de pelo menos 3 cantos.');
+      const prev = (i - 1 + n) % n;
+      const Lprev = sideLen(room, prev);
+      room.pts.splice(i, 1);
+      room.sides = [];
+      room.diags = {};
+      remapEdges(room, (k, val, isPos) => {
+        if (k === i) return isPos ? [[prev < i ? prev : prev - 1, val + Lprev]] : [];
+        if (k > i) return [[k - 1, val]];
+        return [[k, val]];
+      });
+      save(room);
+      savePlan();
+      select({ t: 'room', room });
     }
 
     // ---------- toque / arrasto / pinça ----------
@@ -343,11 +534,15 @@ export default {
       }
       const p = toWorld(e);
       if (mode === 'wall') {
-        const sp = snapPoint(p);
+        const sp = snapAt(p);
         const start = sp ? sp.p : [round(p[0]), round(p[1])];
         preview = { x1: start[0], y1: start[1], x2: start[0], y2: start[1], snap: sp };
         drag = { kind: 'newWall', start: [e.clientX, e.clientY], moved: false };
         draw();
+        return;
+      }
+      if (mode === 'erase') {
+        drag = { kind: 'erase', start: [e.clientX, e.clientY], moved: false, p0: p, origin: [v.ox, v.oy] };
         return;
       }
       if (mode === 'door' || mode === 'window') {
@@ -355,11 +550,16 @@ export default {
         let best = null;
         for (const s of segs) {
           const r = distToSeg(p, s);
-          if (r.d < tol() * 1.5 && (!best || r.d < best.r.d)) best = { s, r };
+          if (r.d < tol() * 1.5 + (s.o1 - s.o0) && (!best || r.d < best.r.d)) best = { s, r };
         }
         if (!best) return ctx.toast('Toque mais perto de uma parede.');
         addOpening(mode, best.s, best.r.t);
         setMode('select');
+        return;
+      }
+      const hd = handleAt(p);
+      if (hd) {
+        drag = { kind: hd.t, hit: hd, start: [e.clientX, e.clientY], moved: false };
         return;
       }
       const hit = hitTest(p);
@@ -388,6 +588,27 @@ export default {
       if (drag.kind === 'newWall') {
         const end = snapEnd([preview.x1, preview.y1], p);
         Object.assign(preview, { x2: end.p[0], y2: end.p[1], snap: end.snap });
+      } else if (drag.kind === 'vertex') {
+        // arrastar canto: encaixe nas outras paredes; senão alinha com os cantos vizinhos (90°)
+        const { room, i } = drag.hit;
+        toFree(room);
+        const n = room.pts.length;
+        const ox = room.x || 0;
+        const oy = room.y || 0;
+        const sp = snapAt(p, { skipRoom: room });
+        let q = sp ? sp.p.slice() : [round(p[0]), round(p[1])];
+        if (!sp) {
+          for (const j of [(i - 1 + n) % n, (i + 1) % n]) {
+            const nb = [room.pts[j][0] + ox, room.pts[j][1] + oy];
+            if (Math.abs(q[0] - nb[0]) < tol()) q[0] = nb[0];
+            if (Math.abs(q[1] - nb[1]) < tol()) q[1] = nb[1];
+          }
+        }
+        room.pts[i] = [q[0] - ox, q[1] - oy];
+        preview = sp ? { x1: q[0], y1: q[1], x2: q[0], y2: q[1], snap: sp, hideLine: true } : null;
+      } else if (drag.kind === 'erase' || (!drag.kind && !drag.hit)) {
+        v.ox = drag.origin[0] + dx;
+        v.oy = drag.origin[1] + dy;
       } else if (drag.hit?.t === 'room') {
         [drag.hit.room.x, drag.hit.room.y] = snapRoom(drag.hit.room, rooms, drag.origin[0] + dx / v.scale, drag.origin[1] + dy / v.scale, plan.t, Math.max(SNAP, 22 / v.scale));
       } else if (drag.hit?.t === 'wall') {
@@ -395,7 +616,7 @@ export default {
         const [x1, y1, x2, y2] = drag.origin;
         let mx = dx / v.scale;
         let my = dy / v.scale;
-        const sp = snapPoint([x1 + mx, y1 + my], w.id) || snapPoint([x2 + mx, y2 + my], w.id);
+        const sp = snapAt([x1 + mx, y1 + my], { exceptId: w.id }) || snapAt([x2 + mx, y2 + my], { exceptId: w.id });
         if (sp) {
           const near1 = Math.hypot(sp.p[0] - (x1 + mx), sp.p[1] - (y1 + my)) < Math.hypot(sp.p[0] - (x2 + mx), sp.p[1] - (y2 + my));
           [mx, my] = near1 ? [sp.p[0] - x1, sp.p[1] - y1] : [sp.p[0] - x2, sp.p[1] - y2];
@@ -412,9 +633,6 @@ export default {
           const t = distToSeg(p, og.seg).t;
           op.pos = Math.min(Math.max(round(t), op.width / 2), L - op.width / 2);
         }
-      } else if (!drag.hit) {
-        v.ox = drag.origin[0] + dx;
-        v.oy = drag.origin[1] + dy;
       }
       draw();
     });
@@ -436,6 +654,28 @@ export default {
         return;
       }
       preview = null;
+      if (d.kind === 'erase') {
+        if (!d.moved) eraseAt(d.p0);
+        return;
+      }
+      if (d.kind === 'vertex') {
+        const { room, i } = d.hit;
+        if (d.moved) {
+          // canto arrastado à mão: as medidas das duas paredes desse canto deixam de valer
+          const n = room.pts.length;
+          room.sides = [...(room.sides || [])];
+          room.sides[i] = null;
+          room.sides[(i - 1 + n) % n] = null;
+          room.diags = {};
+          save(room);
+          select({ t: 'vertex', room, i });
+        } else select({ t: 'vertex', room, i });
+        return;
+      }
+      if (d.kind === 'addVertex') {
+        if (!d.moved) insertVertex(d.hit.room, d.hit.i);
+        return;
+      }
       if (d.moved) {
         if (d.hit?.t === 'room') db.put('rooms', d.hit.room);
         if (d.hit?.t === 'wall' || d.hit?.t === 'op') savePlan();
@@ -460,6 +700,8 @@ export default {
       hint.textContent = HINTS[mode];
       hint.hidden = mode === 'select' && !!selection;
       canvas.style.cursor = mode === 'select' ? 'default' : 'crosshair';
+      if (mode !== 'select') select(null);
+      draw();
     }
 
     // ---------- inserir ----------
@@ -476,14 +718,12 @@ export default {
       arm(side.querySelector('.mfield'));
     }
 
-    async function addRoom(shape) {
+    async function addRoom() {
       const b = contentBounds(rooms, plan);
       const room = {
         id: uid(), propertyId: property.id, kind: 'Outro', name: `Cômodo ${rooms.length + 1}`,
-        order: rooms.length, shape, x: rooms.length ? b.maxX + 0.5 : 0, y: rooms.length ? b.minY : 0, placed: true,
-        width: shape === 'rect' ? 3 : null, length: shape === 'rect' ? 3 : null,
-        walls: shape === 'poly' ? [{ len: null, dir: 0 }] : [],
-        heights: newRoomHeights(property),
+        order: rooms.length, shape: 'rect', x: rooms.length ? b.maxX + 0.6 : 0, y: rooms.length ? b.minY + plan.t : 0, placed: true,
+        width: 3, length: 3, heights: newRoomHeights(property),
       };
       room.height = room.heights[0];
       await db.put('rooms', room);
@@ -495,10 +735,6 @@ export default {
     }
 
     // ---------- painel de propriedades ----------
-    const save = async (room) => {
-      await db.put('rooms', room);
-      draw();
-    };
     const head = (title) => h('div', { class: 'props-head' }, h('b', {}, title), h('button', { class: 'icon-btn', title: 'Fechar', onclick: () => select(null) }, '✕'));
     const seg2 = (opts, cur, onPick) => h('div', { class: 'segs' }, ...opts.map(([val, label]) => h('button', { class: 'seg' + (cur === val ? ' on' : ''), onclick: () => onPick(val) }, label)));
 
@@ -509,6 +745,7 @@ export default {
       draw();
       if (!selection) return setSide();
       if (selection.t === 'room') return roomPanel(selection.room);
+      if (selection.t === 'vertex') return vertexPanel(selection.room, selection.i);
       if (selection.t === 'edge') return edgePanel(selection.room, selection.i);
       if (selection.t === 'wall') return wallPanel(selection.wall);
       if (selection.t === 'op') return openingPanel(selection.op);
@@ -520,35 +757,68 @@ export default {
       const kind = h('select', {}, ...ROOM_KINDS.map((k) => h('option', { selected: room.kind === k }, k)));
       kind.addEventListener('change', () => { room.kind = kind.value; save(room); });
       const areaOut = h('b', {}, `${fmt(roomArea(room))} m²`);
-      const saveArea = async (r) => { await save(r); areaOut.textContent = `${fmt(roomArea(r))} m²`; };
+      const closeOut = h('p', { class: 'gap warn' });
+      const refresh = () => {
+        areaOut.textContent = `${fmt(roomArea(room))} m²`;
+        const err = closingError(room);
+        closeOut.textContent = err > 0.01 ? `Diferença no fechamento: ${fmt(err * 100, 0)} cm. Confira as medidas ou meça uma diagonal.` : '';
+      };
       const parts = [
         head('Cômodo'),
         h('label', { class: 'field' }, h('span', {}, 'Nome'), name),
         h('label', { class: 'field' }, h('span', {}, 'Tipo'), kind),
-        h('div', { class: 'field' }, h('span', {}, 'Forma'), seg2([['rect', 'Retângulo'], ['poly', 'Parede por parede']], room.shape || 'rect', async (shape) => {
-          if (shape === 'poly' && !(room.walls || []).length) {
-            const w = room.width || 3;
-            const l = room.length || 3;
-            room.walls = [{ len: w, dir: 0 }, { len: l, dir: 90 }, { len: w, dir: 180 }, { len: l, dir: 270 }];
-          }
-          room.shape = shape;
-          await save(room);
-          select({ t: 'room', room });
-        })),
       ];
-      if ((room.shape || 'rect') === 'rect') {
+      if (room.shape !== 'free') {
+        const diagRect = Math.hypot(room.width || 0, room.length || 0);
         parts.push(
-          measureField({ label: 'Largura', value: room.width, onChange: (n) => { room.width = n; saveArea(room); } }),
-          measureField({ label: 'Comprimento', value: room.length, onChange: (n) => { room.length = n; saveArea(room); } }),
+          measureField({ label: 'Largura (parede 1)', value: room.width, onChange: (n) => { room.width = n; save(room); refresh(); } }),
+          measureField({ label: 'Comprimento (parede 2)', value: room.length, onChange: (n) => { room.length = n; save(room); refresh(); } }),
+          measureField({
+            label: 'Diagonal (canto 1 → 3)',
+            value: room.diag13 ?? null,
+            hint: `No esquadro daria ${fmt(diagRect)} m. Se medir diferente, o app corrige a forma.`,
+            onChange: (n) => {
+              room.diag13 = n;
+              if (n > 0 && Math.abs(n - Math.hypot(room.width || 0, room.length || 0)) > 0.005) {
+                toFree(room);
+                room.diags = { 2: n };
+                solveFree(room);
+                save(room);
+                select({ t: 'room', room });
+                ctx.toast('O cômodo está fora de esquadro: forma corrigida pela diagonal.');
+              } else save(room);
+            },
+          }),
           h('button', { class: 'btn block', onclick: () => { room.rot = room.rot === 90 ? 0 : 90; save(room); } }, '↻ Girar 90°')
         );
       } else {
-        parts.push(wallEditor(room));
+        const n = room.pts.length;
+        room.sides = room.sides || [];
+        room.diags = room.diags || {};
+        const sideFields = room.pts.map((_, i) => measureField({
+          label: `Parede ${i + 1} (canto ${i + 1} → ${((i + 1) % n) + 1})`,
+          value: room.sides[i] > 0 ? room.sides[i] : sideLen(room, i),
+          onChange: (v2) => { room.sides[i] = v2 > 0 ? v2 : null; solveFree(room); save(room); refresh(); },
+        }));
+        const diagFields = [];
+        for (let k = 2; k <= n - 2; k++) {
+          diagFields.push(measureField({
+            label: `Diagonal (canto 1 → ${k + 1})`,
+            value: room.diags[k] > 0 ? room.diags[k] : diagLen(room, k),
+            onChange: (v2) => { room.diags[k] = v2 > 0 ? v2 : undefined; solveFree(room); save(room); refresh(); },
+          }));
+        }
+        parts.push(
+          h('div', { class: 'field' }, h('span', {}, 'Paredes'), ...sideFields),
+          diagFields.length ? h('div', { class: 'field' }, h('span', {}, 'Diagonais'), ...diagFields) : null,
+          closeOut,
+          h('p', { class: 'muted' }, 'Meça as paredes em sequência. Para tirar a dúvida do esquadro, meça a diagonal: o app recalcula a forma.')
+        );
       }
       parts.push(
         h('div', { class: 'field' }, h('span', {}, 'Pé-direito'), heightEditor(room, () => save(room), ctx)),
         h('p', {}, 'Área: ', areaOut),
-        h('p', { class: 'muted' }, 'Para apagar uma parede deste cômodo ou pôr porta/janela, toque na própria parede.'),
+        h('p', { class: 'muted' }, 'Cantos numerados: arraste para mudar a forma. Toque no + no meio de uma parede para criar um canto.'),
         h('button', {
           class: 'btn danger block',
           onclick: async () => {
@@ -562,15 +832,25 @@ export default {
         }, 'Excluir cômodo')
       );
       setSide(...parts);
+      refresh();
+    }
+
+    function vertexPanel(room, i) {
+      setSide(
+        head(`Canto ${i + 1}`),
+        h('p', { class: 'muted' }, `${room.name || room.kind}. Arraste o canto no desenho: ele encaixa nas outras paredes e alinha com os cantos vizinhos.`),
+        h('button', { class: 'btn block', onclick: () => removeVertex(room, i) }, 'Remover este canto'),
+        h('button', { class: 'btn block', onclick: () => select({ t: 'room', room }) }, 'Ver as medidas do cômodo')
+      );
     }
 
     function edgePanel(room, i) {
       const s = segments(rooms, plan).find((x) => x.host.t === 'room' && x.host.id === room.id && x.host.edge === i);
-      const exists = !(room.hiddenEdges || []).includes(i);
+      if (!s) return select(null);
       setSide(
-        head('Parede do cômodo'),
+        head(`Parede ${i + 1}`),
         h('p', {}, h('b', {}, room.name || room.kind), ` · ${fmt(segLen(s))} m`),
-        exists ? measureField({
+        measureField({
           label: 'Espessura desta parede',
           value: s.t,
           hint: `Padrão do imóvel: ${fmt(plan.t)} m. Ela cresce para fora do cômodo.`,
@@ -578,35 +858,23 @@ export default {
             room.edgeT = { ...(room.edgeT || {}), [i]: n > 0 ? n : undefined };
             await save(room);
           },
-        }) : null,
-        h('div', { class: 'field' }, h('span', {}, 'Esta parede existe?'), seg2([[true, 'Sim'], [false, 'Não (vão aberto)']], exists, async (val) => {
-          const set = new Set(room.hiddenEdges || []);
-          val ? set.delete(i) : set.add(i);
-          room.hiddenEdges = [...set];
-          if (!val) plan.openings = plan.openings.filter((o) => !(o.host.t === 'room' && o.host.id === room.id && o.host.edge === i));
-          await save(room);
-          savePlan();
-          select({ t: 'edge', room, i });
-        })),
-        exists ? h('div', { class: 'row' },
+        }),
+        h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => addOpening('door', s, segLen(s) / 2) }, '+ Porta aqui'),
-          h('button', { class: 'btn', onclick: () => addOpening('window', s, segLen(s) / 2) }, '+ Janela aqui')) : null,
+          h('button', { class: 'btn', onclick: () => addOpening('window', s, segLen(s) / 2) }, '+ Janela aqui')),
+        h('p', { class: 'muted' }, 'Trecho de parede que não existe (vão, circulação)? Use a Borracha.'),
         h('button', { class: 'btn block', onclick: () => select({ t: 'room', room }) }, 'Ver o cômodo')
       );
     }
 
     function wallPanel(w) {
       const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
-      const dirOf = () => {
-        const a = (Math.round((Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180) / Math.PI / 90) * 90 + 360) % 360;
-        return a;
-      };
+      const dirOf = () => (Math.round((Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180) / Math.PI / 90) * 90 + 360) % 360;
       const setLen = (len, dir) => {
         if (!(len > 0)) return;
-        const d = dir ?? null;
         let ux;
         let uy;
-        if (d != null) [ux, uy] = DIRS[d];
+        if (dir != null) [ux, uy] = DIRS[dir];
         else {
           const cur = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1;
           [ux, uy] = [(w.x2 - w.x1) / cur, (w.y2 - w.y1) / cur];
@@ -629,19 +897,16 @@ export default {
           select({ t: 'wall', wall: w });
         })),
         measureField({ label: 'Espessura', value: w.t > 0 ? w.t : w.kind === 'half' ? HALF_T : plan.t, onChange: (n) => { w.t = n > 0 ? n : undefined; savePlan(); draw(); } }),
+        h('div', { class: 'field' }, h('span', {}, 'Espessura para qual lado da linha'), seg2([['left', 'Lado 1'], ['center', 'Centro'], ['right', 'Lado 2']], w.align || 'center', (a) => {
+          w.align = a;
+          savePlan();
+          select({ t: 'wall', wall: w });
+        })),
         w.kind === 'half' ? measureField({ label: 'Altura da meia parede', value: w.h, onChange: (n) => { w.h = n; savePlan(); draw(); } }) : null,
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => addOpening('door', s, segLen(s) / 2) }, '+ Porta'),
           h('button', { class: 'btn', onclick: () => addOpening('window', s, segLen(s) / 2) }, '+ Janela')),
-        h('button', {
-          class: 'btn danger block',
-          onclick: () => {
-            plan.walls = plan.walls.filter((x) => x !== w);
-            plan.openings = plan.openings.filter((o) => !(o.host.t === 'wall' && o.host.id === w.id));
-            savePlan();
-            select(null);
-          },
-        }, 'Excluir parede')
+        h('p', { class: 'muted' }, 'Para apagar a parede ou um pedaço dela, use a Borracha.')
       );
     }
 
@@ -673,60 +938,6 @@ export default {
       );
     }
 
-    function wallEditor(room) {
-      room.walls ||= [];
-      const box = h('div', { class: 'walls' });
-      const gap = h('p', { class: 'gap' });
-      const showGap = () => {
-        const d = closingGap(room);
-        gap.textContent = room.walls.length < 3 ? 'Meça cada parede em sequência, no sentido horário.'
-          : d < 0.02 ? '✓ Contorno fechado.' : `Falta fechar: ${fmt(d)} m`;
-        gap.className = 'gap ' + (d < 0.02 && room.walls.length >= 3 ? 'ok' : 'warn');
-      };
-      const rows = () => {
-        box.replaceChildren(...room.walls.map((w, i) => {
-          const dirs = h('div', { class: 'dirs' }, ...[0, 90, 180, 270].map((d) =>
-            h('button', { class: 'dir' + (w.dir === d ? ' on' : ''), onclick: () => { w.dir = d; save(room); rows(); } }, DIR_ARROWS[d])));
-          return h('div', { class: 'wall-row' },
-            measureField({
-              label: `Parede ${i + 1}`,
-              value: w.len,
-              onChange: (n) => {
-                w.len = n || 0;
-                save(room);
-                showGap();
-                if (i === room.walls.length - 1 && w.len > 0 && (room.walls.length < 3 || closingGap(room) > 0.02)) addWall();
-              },
-            }),
-            dirs,
-            h('button', { class: 'icon-btn', onclick: () => { room.walls.splice(i, 1); save(room); rows(); } }, '✕'));
-        }));
-        showGap();
-      };
-      rows();
-      const addWall = () => {
-        const last = room.walls[room.walls.length - 1];
-        room.walls.push({ len: null, dir: last ? (last.dir + 90) % 360 : 0 });
-        rows();
-        const fields = box.querySelectorAll('.mfield');
-        arm(fields[fields.length - 1]);
-      };
-      const close = () => {
-        let [x, y] = [0, 0];
-        for (const w of room.walls) { const [dx, dy] = DIRS[w.dir]; x += dx * (w.len || 0); y += dy * (w.len || 0); }
-        if (Math.abs(x) > 0.01) room.walls.push({ len: Math.abs(x), dir: x > 0 ? 180 : 0 });
-        if (Math.abs(y) > 0.01) room.walls.push({ len: Math.abs(y), dir: y > 0 ? 270 : 90 });
-        save(room);
-        rows();
-      };
-      return h('div', {},
-        h('p', { class: 'muted' }, 'Cada parede: meça com a trena e escolha a direção (sentido horário). A próxima vira 90° sozinha.'),
-        box, gap,
-        h('div', { class: 'row' },
-          h('button', { class: 'btn primary', onclick: addWall }, '+ Parede'),
-          h('button', { class: 'btn', onclick: close }, 'Fechar contorno')));
-    }
-
     // Espessura padrão das paredes do imóvel (cada parede pode ter a sua nas propriedades).
     const tBtn = h('button', { class: 'btn mono-btn', title: 'Espessura padrão das paredes', onclick: () => defaultsPanel() }, `Paredes ${fmt(plan.t)} m`);
     function defaultsPanel() {
@@ -752,16 +963,28 @@ export default {
       arm(side.querySelector('.mfield'));
     }
 
+    // Encaixe liga/desliga (como o F3 do AutoCAD).
+    const snapBtn = h('button', {
+      class: 'btn mode on',
+      title: 'Encaixe em extremidades, meios, interseções e perpendicular',
+      onclick: () => {
+        osnap = !osnap;
+        snapBtn.classList.toggle('on', osnap);
+        snapBtn.textContent = osnap ? '⌖ Encaixe' : '⌖ Sem encaixe';
+      },
+    }, '⌖ Encaixe');
+
     const modeBtn = (m, label) => (modeBtns[m] = h('button', { class: 'btn mode', onclick: () => setMode(m) }, label));
     body.replaceChildren(
       h('div', { class: 'plan-stage' },
         wrap,
         h('div', { class: 'plan-add' },
-          h('button', { class: 'btn primary big', onclick: () => addRoom('rect') }, '+ Cômodo'),
+          h('button', { class: 'btn primary big', onclick: () => addRoom() }, '+ Cômodo'),
           modeBtn('wall', '╱ Parede'),
           modeBtn('door', '◜ Porta'),
           modeBtn('window', '▭ Janela'),
-          h('button', { class: 'btn', onclick: () => addRoom('poly') }, 'Cômodo irregular'),
+          modeBtn('erase', '⌫ Borracha'),
+          snapBtn,
           tBtn),
         h('div', { class: 'plan-tools' },
           h('button', { class: 'btn', onclick: () => zoom(1.25) }, '+'),
