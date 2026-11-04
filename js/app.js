@@ -5,7 +5,7 @@ import { TOOLS } from './tools/index.js';
 import { roomArea } from './geometry.js';
 import { restoreButton } from './tools/export.js';
 
-export const APP_VERSION = '1.7.0'; // mantenha igual ao VERSION do sw.js
+export const APP_VERSION = '1.8.0'; // mantenha igual ao VERSION do sw.js
 const view = document.getElementById('view');
 let currentPropertyId = null;
 const history = []; // medidas recentes desta sessão
@@ -325,6 +325,7 @@ async function renderConfig() {
       h('label', { class: 'field' }, h('span', {}, 'Casas decimais'), decimals),
       toggle('autoAdvance', 'Avançar sozinho', 'Depois de receber uma medida, já seleciona o próximo campo.'),
       toggle('beep', 'Bip ao medir', 'Toca um bip curto quando a medida chega.'),
+      toggle('toolLabels', 'Nomes nas ferramentas do desenho', 'Mostra o nome embaixo de cada ícone da barra de ferramentas.'),
       h('div', { class: 'row' },
         h('button', { class: 'btn', onclick: () => glm.simulate() }, 'Simular medida'),
         h('span', { class: 'muted' }, 'Útil para testar sem a trena.'))),

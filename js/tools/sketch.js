@@ -5,7 +5,8 @@
 // Cômodo: nasce retângulo; tocar nele mostra os cantos (arrastar muda a forma) e um "+" no meio de cada
 // parede (cria um canto). Lados e diagonais medidos calculam a forma real (triangulação).
 import { uid } from '../db.js';
-import { h, fmt, measureField, arm, confirmDialog } from '../ui.js';
+import { h, fmt, measureField, arm, confirmDialog, getSettings } from '../ui.js';
+import { icon } from '../icons.js';
 import { roomArea, bounds, DIR_ARROWS, DIRS, ROOM_KINDS, toFree, solveFree, sideLen, diagLen, closingError } from '../geometry.js';
 import { loadRooms, heightEditor, newRoomHeights } from './rooms.js';
 import {
@@ -105,13 +106,65 @@ function drawSnapMarker(g, x, y, kind) {
   g.restore();
 }
 
-export function drawPlan(g, rooms, v, { selection, width, height, print, plan = { walls: [], openings: [] }, preview, showHandles } = {}) {
+// Cota avulsa (linha de cota afastada "off" metros, com marcas a 45° e o valor).
+function drawDim(g, d, tx, ty, v, sel) {
+  const L = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+  if (L < 1e-6) return;
+  const n = [-(d.y2 - d.y1) / L, (d.x2 - d.x1) / L];
+  const o = d.off ?? 0.4;
+  const a = [d.x1 + n[0] * o, d.y1 + n[1] * o];
+  const b = [d.x2 + n[0] * o, d.y2 + n[1] * o];
+  g.save();
+  g.strokeStyle = sel ? AZUL : '#334155';
+  g.lineWidth = sel ? 2 : 1;
+  g.beginPath();
+  g.moveTo(tx(a[0]), ty(a[1])); g.lineTo(tx(b[0]), ty(b[1]));
+  for (const [p, q] of [[[d.x1, d.y1], a], [[d.x2, d.y2], b]]) {
+    g.moveTo(tx(p[0] + n[0] * Math.sign(o) * 0.05), ty(p[1] + n[1] * Math.sign(o) * 0.05));
+    g.lineTo(tx(q[0] + n[0] * Math.sign(o) * 0.08), ty(q[1] + n[1] * Math.sign(o) * 0.08));
+  }
+  for (const p of [a, b]) { g.moveTo(tx(p[0]) - 5, ty(p[1]) + 5); g.lineTo(tx(p[0]) + 5, ty(p[1]) - 5); }
+  g.stroke();
+  g.translate(tx((a[0] + b[0]) / 2), ty((a[1] + b[1]) / 2));
+  let ang = Math.atan2(d.y2 - d.y1, d.x2 - d.x1);
+  if (ang > Math.PI / 2) ang -= Math.PI;
+  if (ang < -Math.PI / 2) ang += Math.PI;
+  g.rotate(ang);
+  g.fillStyle = sel ? AZUL : '#141414';
+  g.font = '500 12px "IBM Plex Mono", ui-monospace, monospace';
+  g.textAlign = 'center';
+  g.textBaseline = 'bottom';
+  g.fillText(fmt(L), 0, -3);
+  g.restore();
+}
+
+// Indicação do norte (canto da tela).
+function drawNorth(g, x, y, deg) {
+  const ang = (((deg || 0) - 90) * Math.PI) / 180;
+  const r = 16;
+  g.save();
+  g.strokeStyle = '#141414';
+  g.fillStyle = '#141414';
+  g.lineWidth = 1.5;
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  const tip = [x + r * Math.cos(ang), y + r * Math.sin(ang)];
+  const l = [x + r * 0.55 * Math.cos(ang + 2.5), y + r * 0.55 * Math.sin(ang + 2.5)];
+  const rt = [x + r * 0.55 * Math.cos(ang - 2.5), y + r * 0.55 * Math.sin(ang - 2.5)];
+  g.beginPath(); g.moveTo(tip[0], tip[1]); g.lineTo(l[0], l[1]); g.lineTo(rt[0], rt[1]); g.closePath(); g.fill();
+  g.font = '700 12px "Space Grotesk", system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('N', x + (r + 9) * Math.cos(ang), y + (r + 9) * Math.sin(ang));
+  g.restore();
+}
+
+export function drawPlan(g, rooms, v, { selection, width, height, print, plan = { walls: [], openings: [] }, preview, showHandles, grid = true, north } = {}) {
   g.save();
   g.fillStyle = '#fff';
   g.fillRect(0, 0, width, height);
   const tx = (x) => v.ox + x * v.scale;
   const ty = (y) => v.oy + y * v.scale;
-  if (!print && v.scale > 8) {
+  if (!print && grid && v.scale > 8) {
     g.strokeStyle = '#E6E1D7';
     g.lineWidth = 1;
     const step = v.scale;
@@ -165,6 +218,25 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
     g.font = '500 12px "IBM Plex Mono", ui-monospace, monospace';
     g.fillStyle = '#475569';
     g.fillText(`${fmt(roomArea(r))} m²`, cx, cy + 9);
+  }
+
+  // cotas avulsas e textos
+  for (const d of plan.dims || []) drawDim(g, d, tx, ty, v, selection?.t === 'dim' && selection.dim === d);
+  for (const t of plan.texts || []) {
+    const sel = selection?.t === 'text' && selection.text === t;
+    g.save();
+    g.fillStyle = sel ? AZUL : '#141414';
+    g.font = `500 ${Math.round(((t.size || 2.5) / 2.5) * 13)}px "Space Grotesk", system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(String(t.text || '').toUpperCase(), tx(t.x), ty(t.y));
+    if (sel) {
+      const w = g.measureText(String(t.text || '').toUpperCase()).width;
+      g.strokeStyle = AZUL;
+      g.setLineDash([4, 3]);
+      g.strokeRect(tx(t.x) - w / 2 - 4, ty(t.y) - 11, w + 8, 22);
+    }
+    g.restore();
   }
 
   // destaque da seleção
@@ -227,7 +299,21 @@ export function drawPlan(g, rooms, v, { selection, width, height, print, plan = 
     g.textAlign = 'center';
     g.fillText(`${fmt(L)} m`, tx((preview.x1 + preview.x2) / 2), ty((preview.y1 + preview.y2) / 2) - 14);
   }
+  if (preview?.rect) {
+    const { x1, y1, x2, y2 } = preview.rect;
+    g.setLineDash([8, 6]);
+    g.strokeStyle = AZUL;
+    g.lineWidth = 2.5;
+    g.strokeRect(tx(Math.min(x1, x2)), ty(Math.min(y1, y2)), Math.abs(x2 - x1) * v.scale, Math.abs(y2 - y1) * v.scale);
+    g.setLineDash([]);
+    g.fillStyle = AZUL;
+    g.font = '500 13px "IBM Plex Mono", ui-monospace, monospace';
+    g.textAlign = 'center';
+    g.fillText(`${fmt(Math.abs(x2 - x1))} × ${fmt(Math.abs(y2 - y1))} m`, tx((x1 + x2) / 2), ty(Math.min(y1, y2)) - 10);
+  }
+  if (preview?.dim) drawDim(g, preview.dim, tx, ty, v, true);
   if (preview?.snap) drawSnapMarker(g, tx(preview.snap.p[0]), ty(preview.snap.p[1]), preview.snap.k);
+  if (!print && north != null) drawNorth(g, width - 40, height - 40, north);
   g.restore();
 }
 
@@ -263,13 +349,25 @@ function snapRoom(room, rooms, x, y, gap = 0, tol = SNAP) {
   return [bestX.v ?? round(x), bestY.v ?? round(y)];
 }
 
-const HINTS = {
-  select: 'Toque num cômodo para ver os cantos (arraste para mudar a forma) e o + para criar um canto. Arraste o cômodo para encaixar.',
-  wall: 'Arraste para desenhar a parede. Ela encaixa em extremidades, meios, interseções e na perpendicular.',
-  door: 'Toque numa parede para colocar a porta.',
-  window: 'Toque numa parede para colocar a janela.',
-  erase: 'Toque no trecho de parede que não existe. Tocar no trecho apagado (tracejado) devolve a parede.',
+// Ferramentas: nome (aparece no toque longo e na barra de estado), ícone e instrução.
+const TOOLS = {
+  select: { name: 'Selecionar', icon: 'select', hint: 'Toque num cômodo, parede, porta ou janela para editar. Arraste para mover; no cômodo, arraste os cantos ou toque no + para criar um canto.' },
+  room: { name: 'Cômodo', icon: 'room', hint: 'Arraste do canto 1 até o canto oposto. Ou toque uma vez e meça largura e comprimento com a trena.' },
+  wall: { name: 'Parede', icon: 'wall', hint: 'Arraste para desenhar a parede. Ela encaixa em extremidades, meios, interseções e na perpendicular.' },
+  door: { name: 'Porta', icon: 'door', hint: 'Toque numa parede para colocar a porta.' },
+  window: { name: 'Janela', icon: 'window', hint: 'Toque numa parede para colocar a janela.' },
+  erase: { name: 'Borracha', icon: 'erase', hint: 'Toque no trecho de parede que não existe. Tocar no trecho apagado (tracejado) devolve a parede.' },
+  dim: { name: 'Cota', icon: 'dim', hint: 'Arraste de um ponto a outro para cotar. A cota encaixa nas paredes.' },
+  half: { name: 'Meia parede', icon: 'half', hint: 'Arraste para desenhar a meia parede (mureta, bancada, guarda-corpo).' },
+  diag: { name: 'Diagonal', icon: 'diag', hint: 'Toque no cômodo e meça a diagonal com a trena: o app corrige a forma.' },
+  text: { name: 'Texto', icon: 'text', hint: 'Toque onde o texto deve ficar.' },
+  north: { name: 'Norte', icon: 'north', hint: 'Indique para onde fica o norte.' },
+  stair: { name: 'Escada', icon: 'stair', soon: true },
+  column: { name: 'Pilar', icon: 'column', soon: true },
 };
+const RAIL = ['select', '|', 'room', 'wall', 'door', 'window', '|', 'erase', 'dim'];
+const MORE = ['half', 'diag', 'text', 'north', 'stair', 'column'];
+const HINTS = Object.fromEntries(Object.entries(TOOLS).map(([k, t]) => [k, `${t.name}: ${t.hint || ''}`]));
 
 export default {
   id: 'sketch',
@@ -283,6 +381,8 @@ export default {
     let selection = null;
     let mode = 'select';
     let osnap = true;
+    let ortho = true;
+    let grid = true;
     let v = null;
     let preview = null;
 
@@ -291,10 +391,76 @@ export default {
     const wrap = h('div', { class: 'plan-wrap' }, canvas);
     const hint = h('div', { class: 'plan-hint' }, HINTS.select);
     const g = canvas.getContext('2d');
-    const savePlan = () => ctx.saveProperty({ plan: { walls: plan.walls, openings: plan.openings } });
     const setSide = (...els) => side.replaceChildren(...els.filter(Boolean));
+
+    // ---------- desfazer / refazer ----------
+    // Cada alteração salva vira um ponto de volta (alterações seguidas em menos de 0,3 s contam como uma).
+    const undoStack = [];
+    const redoStack = [];
+    const snapshot = () => JSON.stringify({
+      rooms,
+      plan: { walls: plan.walls, openings: plan.openings, dims: plan.dims, texts: plan.texts },
+      wallT: property.wallT ?? null,
+      north: property.north ?? null,
+    });
+    let lastState = snapshot();
+    let commitTimer = null;
+    const undoBtns = {};
+    const refreshUndo = () => {
+      if (undoBtns.undo) undoBtns.undo.disabled = !undoStack.length;
+      if (undoBtns.redo) undoBtns.redo.disabled = !redoStack.length;
+    };
+    function commit() {
+      clearTimeout(commitTimer);
+      commitTimer = setTimeout(() => {
+        const now = snapshot();
+        if (now === lastState) return;
+        undoStack.push(lastState);
+        if (undoStack.length > 80) undoStack.shift();
+        redoStack.length = 0;
+        lastState = now;
+        refreshUndo();
+      }, 300);
+    }
+    async function restore(state) {
+      const s = JSON.parse(state);
+      const keep = new Set(s.rooms.map((r) => r.id));
+      for (const r of rooms) if (!keep.has(r.id)) await db.del('rooms', r.id);
+      rooms.splice(0, rooms.length, ...s.rooms);
+      for (const r of rooms) await db.put('rooms', r);
+      plan.walls = s.plan.walls;
+      plan.openings = s.plan.openings;
+      plan.dims = s.plan.dims || [];
+      plan.texts = s.plan.texts || [];
+      await ctx.saveProperty({ plan: s.plan, wallT: s.wallT ?? undefined, north: s.north ?? undefined });
+      lastState = snapshot();
+      select(null);
+      tBtn.textContent = `Paredes ${fmt(plan.t)}`;
+      refreshUndo();
+      draw();
+    }
+    const doUndo = () => {
+      if (!undoStack.length) return;
+      clearTimeout(commitTimer);
+      redoStack.push(lastState);
+      restore(undoStack.pop());
+      ctx.toast('Desfeito.');
+    };
+    const doRedo = () => {
+      if (!redoStack.length) return;
+      clearTimeout(commitTimer);
+      undoStack.push(lastState);
+      restore(redoStack.pop());
+      ctx.toast('Refeito.');
+    };
+
+    const savePlan = async () => {
+      await ctx.saveProperty({ plan: { walls: plan.walls, openings: plan.openings, dims: plan.dims, texts: plan.texts } });
+      commit();
+    };
     const save = async (room) => {
       await db.put('rooms', room);
+      commit();
       draw();
     };
 
@@ -310,6 +476,7 @@ export default {
       cursor += (bounds(r).maxX || 3) + 0.5;
       db.put('rooms', r);
     }
+    lastState = snapshot();
 
     const size = () => {
       const w = wrap.clientWidth;
@@ -324,7 +491,7 @@ export default {
     };
     const draw = () => {
       if (!v) return;
-      drawPlan(g, rooms, v, { selection, width: wrap.clientWidth, height: wrap.clientHeight, plan, preview, showHandles: mode === 'select' });
+      drawPlan(g, rooms, v, { selection, width: wrap.clientWidth, height: wrap.clientHeight, plan, preview, showHandles: mode === 'select', grid, north: property.north });
     };
     const fit = () => {
       const [w, hh] = size();
@@ -351,11 +518,13 @@ export default {
       const sp = snapAt(p, { ...opts, from: start });
       if (sp) return { p: sp.p, snap: sp };
       let [dx, dy] = [p[0] - start[0], p[1] - start[1]];
-      const ang = Math.abs((Math.atan2(dy, dx) * 180) / Math.PI);
-      if (ang < 8 || ang > 172) dy = 0;
-      else if (Math.abs(ang - 90) < 8) dx = 0;
+      if (ortho) {
+        // Orto: trava em horizontal ou vertical
+        if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
+        else dx = 0;
+      }
       const L = Math.hypot(dx, dy);
-      if (L > 0) { const k = round(L) / L; dx *= k; dy *= k; }
+      if (L > 0 && grid) { const k = round(L) / L; dx *= k; dy *= k; }
       return { p: [start[0] + dx, start[1] + dy], snap: null };
     }
 
@@ -376,6 +545,15 @@ export default {
     function hitTest(p) {
       const segs = segments(rooms, plan);
       const t = tol();
+      for (const tx0 of [...plan.texts].reverse()) {
+        if (Math.abs(p[0] - tx0.x) < Math.max(0.6, 60 / v.scale) && Math.abs(p[1] - tx0.y) < 14 / v.scale) return { t: 'text', text: tx0 };
+      }
+      for (const d of [...plan.dims].reverse()) {
+        const L = Math.hypot(d.x2 - d.x1, d.y2 - d.y1) || 1;
+        const n = [-(d.y2 - d.y1) / L, (d.x2 - d.x1) / L];
+        const o = d.off ?? 0.4;
+        if (distToSeg(p, { x1: d.x1 + n[0] * o, y1: d.y1 + n[1] * o, x2: d.x2 + n[0] * o, y2: d.y2 + n[1] * o }).d < t) return { t: 'dim', dim: d };
+      }
       for (const op of [...plan.openings].reverse()) {
         const og = openingGeom(op, segs);
         if (og && distToSeg(p, { x1: og.a[0], y1: og.a[1], x2: og.b[0], y2: og.b[1] }).d < t) return { t: 'op', op };
@@ -533,12 +711,47 @@ export default {
         return;
       }
       const p = toWorld(e);
-      if (mode === 'wall') {
+      const startPt = () => {
         const sp = snapAt(p);
-        const start = sp ? sp.p : [round(p[0]), round(p[1])];
-        preview = { x1: start[0], y1: start[1], x2: start[0], y2: start[1], snap: sp };
-        drag = { kind: 'newWall', start: [e.clientX, e.clientY], moved: false };
+        return { sp, pt: sp ? sp.p : grid ? [round(p[0]), round(p[1])] : p };
+      };
+      if (mode === 'wall' || mode === 'half') {
+        const { sp, pt } = startPt();
+        preview = { x1: pt[0], y1: pt[1], x2: pt[0], y2: pt[1], snap: sp };
+        drag = { kind: 'newWall', half: mode === 'half', start: [e.clientX, e.clientY], moved: false };
         draw();
+        return;
+      }
+      if (mode === 'room') {
+        const { sp, pt } = startPt();
+        preview = { rect: { x1: pt[0], y1: pt[1], x2: pt[0], y2: pt[1] }, snap: sp };
+        drag = { kind: 'newRoom', start: [e.clientX, e.clientY], moved: false, p0: pt };
+        draw();
+        return;
+      }
+      if (mode === 'dim') {
+        const { sp, pt } = startPt();
+        preview = { dim: { x1: pt[0], y1: pt[1], x2: pt[0], y2: pt[1], off: 0.4 }, snap: sp };
+        drag = { kind: 'newDim', start: [e.clientX, e.clientY], moved: false };
+        draw();
+        return;
+      }
+      if (mode === 'text') {
+        const t0 = { id: uid(), x: p[0], y: p[1], text: 'Texto', size: 2.5 };
+        plan.texts.push(t0);
+        savePlan();
+        setMode('select');
+        select({ t: 'text', text: t0 });
+        return;
+      }
+      if (mode === 'diag') {
+        const r = [...rooms].reverse().find((x) => pointInPoly(p, worldPoints(x)));
+        if (!r) return ctx.toast('Toque dentro de um cômodo.');
+        if (r.shape === 'free' && r.pts.length < 4) return ctx.toast('Este cômodo tem só 3 cantos: não tem diagonal.');
+        setMode('select');
+        select({ t: 'room', room: r });
+        const f = [...side.querySelectorAll('.mfield')].find((x) => x.textContent.includes('Diagonal'));
+        if (f) { arm(f); ctx.toast('Meça a diagonal com a trena.'); }
         return;
       }
       if (mode === 'erase') {
@@ -566,7 +779,7 @@ export default {
       let origin = [v.ox, v.oy];
       if (hit?.t === 'room') origin = [hit.room.x, hit.room.y];
       if (hit?.t === 'wall') origin = [hit.wall.x1, hit.wall.y1, hit.wall.x2, hit.wall.y2];
-      drag = { hit, start: [e.clientX, e.clientY], origin, moved: false, p0: p };
+      drag = { hit, start: [e.clientX, e.clientY], origin, origin2: hit?.t === 'text' ? [hit.text.x, hit.text.y] : null, moved: false, p0: p };
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!pointers.has(e.pointerId)) return;
@@ -588,6 +801,24 @@ export default {
       if (drag.kind === 'newWall') {
         const end = snapEnd([preview.x1, preview.y1], p);
         Object.assign(preview, { x2: end.p[0], y2: end.p[1], snap: end.snap });
+      } else if (drag.kind === 'newRoom') {
+        const sp = snapAt(p);
+        const q = sp ? sp.p : grid ? [round(p[0]), round(p[1])] : p;
+        Object.assign(preview.rect, { x2: q[0], y2: q[1] });
+        preview.snap = sp;
+      } else if (drag.kind === 'newDim') {
+        const end = snapEnd([preview.dim.x1, preview.dim.y1], p);
+        Object.assign(preview.dim, { x2: end.p[0], y2: end.p[1] });
+        preview.snap = end.snap;
+      } else if (drag.hit?.t === 'text') {
+        drag.hit.text.x = drag.origin2[0] + dx / v.scale;
+        drag.hit.text.y = drag.origin2[1] + dy / v.scale;
+      } else if (drag.hit?.t === 'dim') {
+        const d = drag.hit.dim;
+        const L = Math.hypot(d.x2 - d.x1, d.y2 - d.y1) || 1;
+        const n = [-(d.y2 - d.y1) / L, (d.x2 - d.x1) / L];
+        const off = (p[0] - d.x1) * n[0] + (p[1] - d.y1) * n[1];
+        d.off = Math.round(off / 0.05) * 0.05 || 0.05;
       } else if (drag.kind === 'vertex') {
         // arrastar canto: encaixe nas outras paredes; senão alinha com os cantos vizinhos (90°)
         const { room, i } = drag.hit;
@@ -646,10 +877,30 @@ export default {
         const pv = preview;
         preview = null;
         if (pv && Math.hypot(pv.x2 - pv.x1, pv.y2 - pv.y1) >= 0.1) {
-          const w = { id: uid(), x1: pv.x1, y1: pv.y1, x2: pv.x2, y2: pv.y2, kind: 'full' };
+          const w = { id: uid(), x1: pv.x1, y1: pv.y1, x2: pv.x2, y2: pv.y2, kind: d.half ? 'half' : 'full', ...(d.half ? { h: 1.1 } : {}) };
           plan.walls.push(w);
           savePlan();
           select({ t: 'wall', wall: w });
+        } else draw();
+        return;
+      }
+      if (d.kind === 'newRoom') {
+        const r = preview.rect;
+        preview = null;
+        const w = Math.abs(r.x2 - r.x1);
+        const l = Math.abs(r.y2 - r.y1);
+        if (d.moved && w >= 0.3 && l >= 0.3) addRoom(Math.min(r.x1, r.x2), Math.min(r.y1, r.y2), w, l);
+        else addRoom(d.p0[0], d.p0[1]);
+        return;
+      }
+      if (d.kind === 'newDim') {
+        const dm = preview.dim;
+        preview = null;
+        if (Math.hypot(dm.x2 - dm.x1, dm.y2 - dm.y1) >= 0.05) {
+          const nd = { id: uid(), ...dm };
+          plan.dims.push(nd);
+          savePlan();
+          select({ t: 'dim', dim: nd });
         } else draw();
         return;
       }
@@ -677,8 +928,8 @@ export default {
         return;
       }
       if (d.moved) {
-        if (d.hit?.t === 'room') db.put('rooms', d.hit.room);
-        if (d.hit?.t === 'wall' || d.hit?.t === 'op') savePlan();
+        if (d.hit?.t === 'room') save(d.hit.room);
+        if (['wall', 'op', 'text', 'dim'].includes(d.hit?.t)) savePlan();
         draw();
         return;
       }
@@ -695,12 +946,17 @@ export default {
     // ---------- modos ----------
     const modeBtns = {};
     function setMode(m) {
+      if (TOOLS[m]?.soon) return ctx.toast(`${TOOLS[m].name}: em breve.`);
+      if (m === 'north') return northPanel();
       mode = mode === m && m !== 'select' ? 'select' : m;
+      // ferramenta do "⋯" usada por último fica num atalho na barra (como no SketchUp)
+      if (MORE.includes(mode)) setRecent(mode);
       for (const [k, b] of Object.entries(modeBtns)) b.classList.toggle('on', k === mode);
+      moreBtn.classList.toggle('on', MORE.includes(mode));
       hint.textContent = HINTS[mode];
-      hint.hidden = mode === 'select' && !!selection;
       canvas.style.cursor = mode === 'select' ? 'default' : 'crosshair';
       if (mode !== 'select') select(null);
+      fly.hidden = true;
       draw();
     }
 
@@ -718,18 +974,22 @@ export default {
       arm(side.querySelector('.mfield'));
     }
 
-    async function addRoom() {
+    // Cômodo novo: no retângulo arrastado, no ponto tocado (3 × 3 m) ou ao lado dos existentes.
+    async function addRoom(x, y, w = 3, l = 3) {
       const b = contentBounds(rooms, plan);
+      if (x == null) {
+        x = rooms.length ? b.maxX + 0.6 : 0;
+        y = rooms.length ? b.minY + plan.t : 0;
+      }
       const room = {
         id: uid(), propertyId: property.id, kind: 'Outro', name: `Cômodo ${rooms.length + 1}`,
-        order: rooms.length, shape: 'rect', x: rooms.length ? b.maxX + 0.6 : 0, y: rooms.length ? b.minY + plan.t : 0, placed: true,
-        width: 3, length: 3, heights: newRoomHeights(property),
+        order: rooms.length, shape: 'rect', x, y, placed: true,
+        width: Math.round(w * 100) / 100, length: Math.round(l * 100) / 100, heights: newRoomHeights(property),
       };
       room.height = room.heights[0];
-      await db.put('rooms', room);
       rooms.push(room);
+      await save(room);
       setMode('select');
-      fit();
       select({ t: 'room', room });
       arm(side.querySelector('.mfield'));
     }
@@ -741,9 +1001,11 @@ export default {
     function select(sel) {
       selection = sel || null;
       side.hidden = !selection;
-      hint.hidden = !!selection;
+      stage.classList.toggle('props-open', !!selection);
       draw();
       if (!selection) return setSide();
+      if (selection.t === 'dim') return dimPanel(selection.dim);
+      if (selection.t === 'text') return textPanel(selection.text);
       if (selection.t === 'room') return roomPanel(selection.room);
       if (selection.t === 'vertex') return vertexPanel(selection.room, selection.i);
       if (selection.t === 'edge') return edgePanel(selection.room, selection.i);
@@ -938,12 +1200,73 @@ export default {
       );
     }
 
+    // ---------- painéis de cota, texto, norte e padrões ----------
+    function dimPanel(d) {
+      const L = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+      setSide(
+        head('Cota'),
+        h('p', {}, 'Medida: ', h('b', {}, `${fmt(L)} m`)),
+        h('div', { class: 'field' }, h('span', {}, 'Lado da linha de cota'), seg2([[1, 'Lado 1'], [-1, 'Lado 2']], Math.sign(d.off ?? 0.4) || 1, (s) => {
+          d.off = Math.abs(d.off ?? 0.4) * s;
+          savePlan();
+          select({ t: 'dim', dim: d });
+        })),
+        h('p', { class: 'muted' }, 'Arraste a cota no desenho para afastá-la ou aproximá-la.'),
+        h('button', { class: 'btn danger block', onclick: () => { plan.dims = plan.dims.filter((x) => x !== d); savePlan(); select(null); } }, 'Excluir cota')
+      );
+    }
+
+    function textPanel(t0) {
+      const inp = h('input', { value: t0.text || '', placeholder: 'Texto' });
+      inp.addEventListener('input', () => { t0.text = inp.value; draw(); });
+      inp.addEventListener('change', () => savePlan());
+      setSide(
+        head('Texto'),
+        h('label', { class: 'field' }, h('span', {}, 'Texto'), inp),
+        h('div', { class: 'field' }, h('span', {}, 'Tamanho impresso'), seg2([[2.5, '2,5 mm'], [3.5, '3,5 mm'], [5, '5 mm']], t0.size || 2.5, (s) => {
+          t0.size = s;
+          savePlan();
+          select({ t: 'text', text: t0 });
+        })),
+        h('p', { class: 'muted' }, 'Sai em maiúsculas, como pede a norma. Arraste no desenho para mudar de lugar.'),
+        h('button', { class: 'btn danger block', onclick: () => { plan.texts = plan.texts.filter((x) => x !== t0); savePlan(); select(null); } }, 'Excluir texto')
+      );
+      setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    }
+
+    function northPanel() {
+      selection = { t: 'north' };
+      side.hidden = false;
+      stage.classList.add('props-open');
+      draw();
+      const val = h('input', { inputmode: 'decimal', value: property.north ?? '', placeholder: 'graus' });
+      const setNorth = async (deg) => {
+        const n = ((Math.round(deg) % 360) + 360) % 360;
+        val.value = n;
+        await ctx.saveProperty({ north: n });
+        commit();
+        draw();
+      };
+      val.addEventListener('change', () => { const n = Number(String(val.value).replace(',', '.')); if (Number.isFinite(n)) setNorth(n); });
+      setSide(
+        head('Norte'),
+        h('p', { class: 'muted' }, 'Para onde fica o norte nesta planta? Use a bússola do celular e gire até bater.'),
+        h('div', { class: 'dirs wide' }, ...[[0, '↑'], [90, '→'], [180, '↓'], [270, '←']].map(([deg, arrow]) =>
+          h('button', { class: 'dir', onclick: () => setNorth(deg) }, arrow))),
+        h('div', { class: 'row' },
+          h('button', { class: 'btn', onclick: () => setNorth((property.north || 0) - 15) }, '↺ 15°'),
+          h('button', { class: 'btn', onclick: () => setNorth((property.north || 0) + 15) }, '↻ 15°')),
+        h('label', { class: 'field' }, h('span', {}, 'Graus (0 = para cima, sentido horário)'), val),
+        h('p', { class: 'muted' }, 'O norte aparece no canto do desenho e na prancha.')
+      );
+    }
+
     // Espessura padrão das paredes do imóvel (cada parede pode ter a sua nas propriedades).
-    const tBtn = h('button', { class: 'btn mono-btn', title: 'Espessura padrão das paredes', onclick: () => defaultsPanel() }, `Paredes ${fmt(plan.t)} m`);
+    const tBtn = h('button', { class: 'st', title: 'Espessura padrão das paredes', onclick: () => defaultsPanel() }, `Paredes ${fmt(plan.t)}`);
     function defaultsPanel() {
       selection = { t: 'defaults' };
       side.hidden = false;
-      hint.hidden = true;
+      stage.classList.add('props-open');
       draw();
       setSide(
         head('Padrões da planta'),
@@ -954,7 +1277,8 @@ export default {
           onChange: async (n) => {
             if (!(n > 0)) return;
             await ctx.saveProperty({ wallT: n });
-            tBtn.textContent = `Paredes ${fmt(plan.t)} m`;
+            commit();
+            tBtn.textContent = `Paredes ${fmt(plan.t)}`;
             draw();
           },
         }),
@@ -963,45 +1287,99 @@ export default {
       arm(side.querySelector('.mfield'));
     }
 
-    // Encaixe liga/desliga (como o F3 do AutoCAD).
-    const snapBtn = h('button', {
-      class: 'btn mode on',
-      title: 'Encaixe em extremidades, meios, interseções e perpendicular',
-      onclick: () => {
-        osnap = !osnap;
-        snapBtn.classList.toggle('on', osnap);
-        snapBtn.textContent = osnap ? '⌖ Encaixe' : '⌖ Sem encaixe';
-      },
-    }, '⌖ Encaixe');
+    // ---------- barra de estado (como no AutoCAD): liga/desliga com um toque ----------
+    const toggle = (label, title, get, set) => {
+      const b = h('button', { class: 'st' + (get() ? ' on' : ''), title, onclick: () => { set(!get()); b.classList.toggle('on', get()); draw(); } }, label);
+      return b;
+    };
+    const status = h('div', { class: 'plan-status' },
+      toggle('⌖ Encaixe', 'Encaixe em extremidades, meios, interseções e perpendicular', () => osnap, (x) => { osnap = x; }),
+      toggle('∟ Orto', 'Paredes e cotas só na horizontal ou vertical', () => ortho, (x) => { ortho = x; }),
+      toggle('▦ Grade', 'Grade de 1 m e medidas arredondadas a 5 cm', () => grid, (x) => { grid = x; }),
+      tBtn,
+      hint);
 
-    const modeBtn = (m, label) => (modeBtns[m] = h('button', { class: 'btn mode', onclick: () => setMode(m) }, label));
-    body.replaceChildren(
-      h('div', { class: 'plan-stage' },
-        wrap,
-        h('div', { class: 'plan-add' },
-          h('button', { class: 'btn primary big', onclick: () => addRoom() }, '+ Cômodo'),
-          modeBtn('wall', '╱ Parede'),
-          modeBtn('door', '◜ Porta'),
-          modeBtn('window', '▭ Janela'),
-          modeBtn('erase', '⌫ Borracha'),
-          snapBtn,
-          tBtn),
-        h('div', { class: 'plan-tools' },
-          h('button', { class: 'btn', onclick: () => zoom(1.25) }, '+'),
-          h('button', { class: 'btn', onclick: () => zoom(0.8) }, '−'),
-          h('button', { class: 'btn', onclick: fit }, 'Ajustar'),
-          h('button', {
-            class: 'btn',
-            onclick: (e) => {
-              const stage = e.currentTarget.closest('.plan-stage');
-              const full = stage.classList.toggle('full');
-              e.currentTarget.textContent = full ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
-              requestAnimationFrame(fit);
-            },
-          }, '⛶ Tela cheia')),
-        hint,
-        side)
-    );
+    // ---------- barra vertical de ferramentas (como no SketchUp) ----------
+    const showLabels = !!getSettings().toolLabels;
+    const tip = h('div', { class: 'tool-tip', hidden: true });
+    const toolBtn = (key) => {
+      const t = TOOLS[key];
+      const b = h('button', { class: 'tool' + (t.soon ? ' soon' : ''), 'aria-label': t.name, onclick: () => setMode(key) }, icon(t.icon), showLabels ? h('small', {}, t.name) : null);
+      // toque longo (ou passar o mouse) mostra o nome
+      let timer;
+      const show = () => {
+        const r = b.getBoundingClientRect();
+        const s = stage.getBoundingClientRect();
+        tip.textContent = t.soon ? `${t.name} · em breve` : t.name;
+        tip.style.left = `${r.right - s.left + 8}px`;
+        tip.style.top = `${r.top - s.top + r.height / 2}px`;
+        tip.hidden = false;
+      };
+      const hide = () => { clearTimeout(timer); tip.hidden = true; };
+      b.addEventListener('pointerdown', () => { timer = setTimeout(show, 450); });
+      b.addEventListener('pointerup', hide);
+      b.addEventListener('pointerleave', hide);
+      b.addEventListener('mouseenter', show);
+      return b;
+    };
+    const recentSlot = h('div', { class: 'recent' });
+    function setRecent(key) {
+      recentSlot.replaceChildren((modeBtns[key] = toolBtn(key)));
+      modeBtns[key].classList.toggle('on', mode === key);
+    }
+    const fly = h('div', { class: 'tool-fly', hidden: true }, ...MORE.map((key) => {
+      const t = TOOLS[key];
+      return h('button', { class: 'fly-item' + (t.soon ? ' soon' : ''), onclick: () => setMode(key) }, icon(t.icon), h('small', {}, t.soon ? `${t.name} (em breve)` : t.name));
+    }));
+    const moreBtn = h('button', {
+      class: 'tool more',
+      'aria-label': 'Mais ferramentas',
+      onclick: () => {
+        fly.hidden = !fly.hidden;
+        if (fly.hidden) return;
+        // abre ao lado do botão, sem passar da barra de estado
+        const r = moreBtn.getBoundingClientRect();
+        const s = stage.getBoundingClientRect();
+        fly.style.left = `${r.right - s.left + 6}px`;
+        fly.style.top = `${Math.max(10, Math.min(r.top - s.top, s.height - fly.offsetHeight - 46))}px`;
+        fly.style.bottom = 'auto';
+      },
+    }, icon('more'), showLabels ? h('small', {}, 'Mais') : null);
+    const rail = h('div', { class: 'tool-rail' + (showLabels ? ' labels' : '') },
+      ...RAIL.map((key) => (key === '|' ? h('i', { class: 'sep' }) : (modeBtns[key] = toolBtn(key)))),
+      h('i', { class: 'sep' }),
+      recentSlot,
+      moreBtn);
+
+    // ---------- atalhos (canto superior) ----------
+    const quickBtn = (name, title, fn) => h('button', { class: 'tool', title, 'aria-label': title, onclick: fn }, icon(name));
+    undoBtns.undo = quickBtn('undo', 'Desfazer', doUndo);
+    undoBtns.redo = quickBtn('redo', 'Refazer', doRedo);
+    const fullBtn = quickBtn('full', 'Tela cheia', () => {
+      const full = stage.classList.toggle('full');
+      fullBtn.title = full ? 'Sair da tela cheia' : 'Tela cheia';
+      requestAnimationFrame(fit);
+    });
+    const quick = h('div', { class: 'plan-quick' },
+      undoBtns.undo, undoBtns.redo,
+      quickBtn('zoomIn', 'Aproximar', () => zoom(1.25)),
+      quickBtn('zoomOut', 'Afastar', () => zoom(0.8)),
+      quickBtn('fit', 'Ajustar à tela', fit),
+      fullBtn);
+    refreshUndo();
+
+    // teclado (computador): Esc volta a Selecionar; Ctrl+Z / Ctrl+Y desfazem e refazem
+    const onKey = (e) => {
+      if (!stage.isConnected) return window.removeEventListener('keydown', onKey);
+      if (e.target.closest?.('input, textarea, select')) return;
+      if (e.key === 'Escape') { setMode('select'); select(null); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); }
+    };
+    window.addEventListener('keydown', onKey);
+
+    const stage = h('div', { class: 'plan-stage cad' }, wrap, rail, fly, tip, quick, status, side);
+    body.replaceChildren(stage);
     setMode('select');
     requestAnimationFrame(fit);
     const ro = new ResizeObserver(() => { if (v) { size(); draw(); } });

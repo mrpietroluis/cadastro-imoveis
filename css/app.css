@@ -452,3 +452,39 @@ textarea.memorial { font-family: var(--font-titulo); font-weight: 500; }
 .seg.on, .editor-bar .seg.on { background: var(--azul-planta); color: var(--papel); }
 .segs { background: #E6E1D7; }
 .mono-btn { font-family: var(--font-mono); font-weight: 500; letter-spacing: .04em; }
+
+/* ---------- Barra de ferramentas estilo CAD (SketchUp / AutoCAD) ---------- */
+.plan-stage.cad .plan-hint { position: static; max-width: none; background: none; padding: 0 8px; color: var(--cad-texto); font-size: 12px; letter-spacing: 0; text-transform: none; pointer-events: none; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tool-rail { position: absolute; left: 10px; top: 10px; z-index: 3; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: #fff; border: 1px solid var(--papel-linha); }
+.tool-rail .sep { display: block; height: 1px; background: var(--papel-linha); margin: 4px 6px; }
+.tool-rail .recent:empty { display: none; }
+.tool { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: transparent; color: var(--grafite); cursor: pointer; padding: 0; }
+.tool svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: square; stroke-linejoin: miter; }
+.tool:hover { background: #F1EEE8; }
+.tool.on, .tool.on:hover { background: var(--azul-planta); color: var(--papel); }
+.tool:disabled { opacity: .3; cursor: default; background: transparent; }
+.tool.more::after { content: ""; position: absolute; right: 4px; bottom: 4px; border-left: 5px solid transparent; border-bottom: 5px solid currentColor; }
+.tool-rail.labels .tool { width: 60px; height: 52px; align-content: center; gap: 2px; }
+.tool-rail.labels .tool small { font: 500 9px var(--font-mono); letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; }
+.tool-tip { position: absolute; z-index: 6; transform: translateY(-50%); background: var(--cad-fundo); color: var(--papel); font: 500 12px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 6px 10px; pointer-events: none; white-space: nowrap; }
+.tool-tip[hidden] { display: none; }
+.tool-fly { position: absolute; left: 66px; bottom: 50px; z-index: 4; display: grid; grid-template-columns: repeat(3, 84px); gap: 4px; padding: 6px; background: #fff; border: 1px solid var(--papel-linha); }
+.tool-fly[hidden] { display: none; }
+.fly-item { height: 66px; display: grid; place-items: center; align-content: center; gap: 6px; border: 0; background: transparent; cursor: pointer; color: var(--grafite); }
+.fly-item:hover { background: #F1EEE8; }
+.fly-item svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.75; }
+.fly-item small { font: 500 10px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.fly-item.soon, .tool.soon { opacity: .4; }
+.plan-quick { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; background: #fff; border: 1px solid var(--papel-linha); }
+.plan-quick .tool { width: 42px; height: 42px; }
+.plan-stage.props-open .plan-quick { right: 354px; }
+.plan-status { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; height: 36px; display: flex; align-items: center; gap: 2px; padding: 0 8px; background: var(--cad-fundo); }
+.plan-status .st { height: 28px; padding: 0 10px; border: 0; background: transparent; color: var(--cad-mudo); font: 500 12px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+.plan-status .st.on { color: var(--papel); background: rgba(127, 163, 224, .18); box-shadow: inset 0 -2px 0 var(--azul-claro); }
+.plan-stage.cad .plan-props { top: 10px; bottom: 46px; }
+.plan-stage.full .plan-status { padding-right: 150px; }
+@media (max-width: 860px) {
+  .plan-stage.cad .plan-props { bottom: 36px; }
+  .plan-stage.props-open .plan-quick { right: 10px; }
+  .plan-stage.cad .plan-hint { display: none; }
+}

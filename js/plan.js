@@ -26,6 +26,8 @@ export function getPlan(property) {
   return {
     walls: p.walls || [],
     openings: p.openings || [],
+    dims: p.dims || [], // cotas avulsas: { id, x1, y1, x2, y2, off } (off = afastamento em metros)
+    texts: p.texts || [], // textos: { id, x, y, text, size } (size = altura impressa em mm)
     get t() {
       return property.wallT > 0 ? property.wallT : DEFAULT_T;
     },
