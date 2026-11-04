@@ -280,6 +280,15 @@ export async function buildPrancha({ property, rooms, def, company }) {
       }
     });
 
+    // Cotas avulsas e textos desenhados no croqui
+    for (const d of plan.dims || []) {
+      const len = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+      if (len > 0.01) dim(X(d.x1), Y(d.y1), X(d.x2), Y(d.y2), (d.off ?? 0.4) * k, n2(len));
+    }
+    for (const t of plan.texts || []) {
+      if (t.text) text(up(t.text), X(t.x), Y(t.y), t.size || 2.5, { align: 'center', baseline: 'middle' });
+    }
+
     // Título do desenho (A.7): número no círculo, título 5 mm sublinhado, escala 2,5 mm
     const ty = area.y + area.h + 12;
     const tx = area.x + area.w / 2 - 30;
@@ -512,6 +521,21 @@ export function buildDXF(rooms, property = {}, escala = 50) {
     const dims = `${n2(op.width)} x ${n2(op.height || 0)}${op.kind === 'window' ? ` / ${n2(op.sill ?? 0)}` : ''}`;
     text('ARQ-DESIGNACAO', c[0] + mm(14), c[1], mm(2.5), dims);
   }
+  for (const d of plan.dims || []) {
+    const L = Math.hypot(d.x2 - d.x1, d.y2 - d.y1);
+    if (L < 0.01) continue;
+    const nrm = [-(d.y2 - d.y1) / L, (d.x2 - d.x1) / L];
+    const o = d.off ?? 0.4;
+    const a = [d.x1 + nrm[0] * o, d.y1 + nrm[1] * o];
+    const b = [d.x2 + nrm[0] * o, d.y2 + nrm[1] * o];
+    line('ARQ-COTA', a[0], a[1], b[0], b[1]);
+    line('ARQ-COTA', d.x1, d.y1, a[0], a[1]);
+    line('ARQ-COTA', d.x2, d.y2, b[0], b[1]);
+    for (const p of [a, b]) line('ARQ-COTA', p[0] - mm(1), p[1] + mm(1), p[0] + mm(1), p[1] - mm(1));
+    const vertical = Math.abs(d.y2 - d.y1) > Math.abs(d.x2 - d.x1);
+    text('ARQ-COTA', (a[0] + b[0]) / 2 + nrm[0] * mm(1.6), (a[1] + b[1]) / 2 + nrm[1] * mm(1.6), mm(2.5), n2(L), vertical ? 90 : 0);
+  }
+  for (const t of plan.texts || []) if (t.text) text('ARQ-TEXTO', t.x, t.y, mm(t.size || 2.5), String(t.text).toUpperCase());
   g(0, 'ENDSEC');
   g(0, 'EOF');
   return new Blob([out.join('\r\n') + '\r\n'], { type: 'application/dxf' });
